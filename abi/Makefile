@@ -1,38 +1,31 @@
 # Makefile for FNA ABI Compatibility Files
 # Written by Ethan "flibitijibibo" Lee
 
-all: Microsoft.Xna.Framework Game Graphics GamerServices Graphics Input.Touch Net Storage Video Xact
+ASSEMBLIES = \
+	Microsoft.Xna.Framework \
+	Microsoft.Xna.Framework.Game \
+	Microsoft.Xna.Framework.Graphics \
+	Microsoft.Xna.Framework.GamerServices \
+	Microsoft.Xna.Framework.Input.Touch \
+	Microsoft.Xna.Framework.Net \
+	Microsoft.Xna.Framework.Storage \
+	Microsoft.Xna.Framework.Video \
+	Microsoft.Xna.Framework.Xact
 
-Microsoft.Xna.Framework: fnacopy
-	mcs Microsoft.Xna.Framework.cs -target:library -r:FNA.dll
+TARGETS = $(ASSEMBLIES:%=%.dll)
 
-Game: fnacopy
-	mcs Microsoft.Xna.Framework.Game.cs -target:library -r:FNA.dll -r:FNA.NetStub.dll
+%.dll: %.cs FNA.dll FNA.NetStub.dll
+	mkdir -p bin
+	mcs -delaysign+ -keyfile:xna4.pub $< -target:library -r:FNA.dll -r:FNA.NetStub.dll -out:$@
+	sn -R $@ ../mono.snk
 
-GamerServices: fnacopy
-	mcs Microsoft.Xna.Framework.GamerServices.cs -target:library -r:FNA.dll -r:FNA.NetStub.dll
+all: $(TARGETS)
 
-Graphics: fnacopy
-	mcs Microsoft.Xna.Framework.Graphics.cs -target:library -r:FNA.dll
+FNA.dll: ../bin/Release/FNA.dll
+	cp ../bin/Release/FNA.dll .
 
-Input.Touch: fnacopy
-	mcs Microsoft.Xna.Framework.Input.Touch.cs -target:library -r:FNA.dll
-
-Net: fnacopy
-	mcs Microsoft.Xna.Framework.Net.cs -target:library -r:FNA.dll -r:FNA.NetStub.dll
-
-Storage: fnacopy
-	mcs Microsoft.Xna.Framework.Storage.cs -target:library -r:FNA.dll
-
-Video: fnacopy
-	mcs Microsoft.Xna.Framework.Video.cs -target:library -r:FNA.dll
-
-Xact: fnacopy
-	mcs Microsoft.Xna.Framework.Xact.cs -target:library -r:FNA.dll
-
-fnacopy: clean
-	cp ../bin/Debug/FNA.dll .
-	cp ../../FNA.NetStub/bin/Debug/FNA.NetStub.dll .
+FNA.NetStub.dll: ../../FNA.NetStub/bin/Strongname/FNA.NetStub.dll
+	cp ../../FNA.NetStub/bin/Strongname/FNA.NetStub.dll .
 
 clean:
-	rm -f *.dll
+	rm -f $(TARGETS) FNA.dll FNA.NetStub.dll

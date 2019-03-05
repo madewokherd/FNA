@@ -338,12 +338,14 @@ RES = \
 	-resource:$(RESDIR)/SpriteEffect.fxb,$(RESNAME).SpriteEffect.fxb \
 	-resource:src/Graphics/Effect/YUVToRGBA/YUVToRGBAEffect.fxb,$(RESNAME).YUVToRGBAEffect.fxb
 
+CSFLAGS=-keyfile:mono.snk
+
 # Targets
 
 debug: clean-debug
 	mkdir -p bin/Debug
 	cp FNA.dll.config bin/Debug
-	mcs /unsafe -debug -define:DEBUG -out:bin/Debug/FNA.dll -target:library $(SRC) $(RES)
+	mcs $(CSFLAGS) /unsafe -debug -define:DEBUG -out:bin/Debug/FNA.dll -target:library $(SRC) $(RES)
 
 clean-debug:
 	rm -rf bin/Debug
@@ -351,7 +353,7 @@ clean-debug:
 release: clean-release
 	mkdir -p bin/Release
 	cp FNA.dll.config bin/Release
-	mcs /unsafe -optimize -out:bin/Release/FNA.dll -target:library $(SRC) $(RES)
+	mcs $(CSFLAGS) /unsafe -optimize -out:bin/Release/FNA.dll -target:library $(SRC) $(RES)
 
 clean-release:
 	rm -rf bin/Release
