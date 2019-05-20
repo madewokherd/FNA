@@ -55,7 +55,6 @@ namespace Microsoft.Xna.Framework.Graphics
 			GL_DEPTH_TEST =				0x0B71,
 			GL_STENCIL_TEST =			0x0B90,
 			// Points
-			GL_PROGRAM_POINT_SIZE =			0x8642,
 			GL_POINT_SPRITE =			0x8861,
 			GL_COORD_REPLACE =			0x8862,
 			// Polygons
@@ -728,6 +727,14 @@ namespace Microsoft.Xna.Framework.Graphics
 		private BlitNamedFramebuffer glBlitNamedFramebuffer;
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void InvalidateNamedFramebufferData(
+			uint framebuffer,
+			int numAttachments,
+			IntPtr attachments
+		);
+		InvalidateNamedFramebufferData glInvalidateNamedFramebufferData;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate void CreateRenderbuffers(
 			int n,
 			out uint renderbuffers
@@ -1221,6 +1228,10 @@ namespace Microsoft.Xna.Framework.Graphics
 				glBlitNamedFramebuffer = (BlitNamedFramebuffer) Marshal.GetDelegateForFunctionPointer(
 					SDL.SDL_GL_GetProcAddress("glBlitNamedFramebuffer"),
 					typeof(BlitNamedFramebuffer)
+				);
+				glInvalidateNamedFramebufferData = (InvalidateNamedFramebufferData) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glInvalidateNamedFramebufferData"),
+					typeof(InvalidateNamedFramebufferData)
 				);
 				glVertexAttribPointer = (VertexAttribPointer) Marshal.GetDelegateForFunctionPointer(
 					SDL.SDL_GL_GetProcAddress("glVertexAttribPointer"),

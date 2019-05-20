@@ -480,6 +480,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private bool supportsMultisampling;
 		private bool supportsFauxBackbuffer;
+		private bool supportsFBOInvalidation;
 		private bool supportsBaseVertex;
 
 		#endregion
@@ -555,8 +556,21 @@ namespace Microsoft.Xna.Framework.Graphics
 		#region memcpy Export
 
 		/* This is used a lot for GetData/Read calls... -flibit */
+#if NETSTANDARD2_0
+		private static unsafe void memcpy(IntPtr dst, IntPtr src, IntPtr len)
+		{
+			long size = len.ToInt64();
+			Buffer.MemoryCopy(
+				(void*) src,
+				(void*) dst,
+				size,
+				size
+			);
+		}
+#else
 		[DllImport("msvcrt", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void memcpy(IntPtr dst, IntPtr src, IntPtr len);
+#endif
 
 		#endregion
 
@@ -782,7 +796,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			attachmentTypes = new GLenum[numAttachments];
 			currentAttachments = new uint[numAttachments];
 			currentAttachmentTypes = new GLenum[numAttachments];
-			drawBuffersArray = Marshal.AllocHGlobal(sizeof(GLenum) * numAttachments);
+			drawBuffersArray = Marshal.AllocHGlobal(sizeof(GLenum) * (numAttachments + 2));
 			unsafe
 			{
 				GLenum* dba = (GLenum*) drawBuffersArray;
@@ -792,6 +806,8 @@ namespace Microsoft.Xna.Framework.Graphics
 					currentAttachmentTypes[i] = GLenum.GL_TEXTURE_2D;
 					dba[i] = GLenum.GL_COLOR_ATTACHMENT0 + i;
 				}
+				dba[numAttachments] = GLenum.GL_DEPTH_ATTACHMENT;
+				dba[numAttachments + 1] = GLenum.GL_STENCIL_ATTACHMENT;
 			}
 			currentDrawBuffers = 0;
 			currentRenderbuffer = 0;
@@ -809,10 +825,6 @@ namespace Microsoft.Xna.Framework.Graphics
 			else
 			{
 				// Compat-only, but needed for PSIZE0 accuracy
-				if (!useES3)
-				{
-					glEnable(GLenum.GL_PROGRAM_POINT_SIZE);
-				}
 				glTexEnvi(GLenum.GL_POINT_SPRITE, GLenum.GL_COORD_REPLACE, 1);
 			}
 		}
@@ -1001,6 +1013,15 @@ namespace Microsoft.Xna.Framework.Graphics
 						GLenum.GL_COLOR_BUFFER_BIT,
 						GLenum.GL_LINEAR
 					);
+					/* Invalidate the MSAA faux-backbuffer */
+					if (supportsFBOInvalidation)
+					{
+						glInvalidateFramebuffer(
+							GLenum.GL_READ_FRAMEBUFFER,
+							attachments.Length + 2,
+							drawBuffersArray
+						);
+					}
 					BindReadFramebuffer(resolveFramebufferDraw);
 				}
 				else
@@ -1015,6 +1036,15 @@ namespace Microsoft.Xna.Framework.Graphics
 					GLenum.GL_COLOR_BUFFER_BIT,
 					backbufferScaleMode
 				);
+				/* Invalidate the faux-backbuffer */
+				if (supportsFBOInvalidation)
+				{
+					glInvalidateFramebuffer(
+						GLenum.GL_READ_FRAMEBUFFER,
+						attachments.Length + 2,
+						drawBuffersArray
+					);
+				}
 
 				BindFramebuffer(realBackbufferFBO);
 
@@ -1271,6 +1301,48 @@ namespace Microsoft.Xna.Framework.Graphics
 		#endregion
 
 		#region State Management Methods
+
+		public void SetPresentationInterval(PresentInterval interval)
+		{
+			if (interval == PresentInterval.Default || interval == PresentInterval.One)
+			{
+				string OSVersion = SDL.SDL_GetPlatform();
+				bool disableLateSwapTear = (
+					OSVersion.Equals("Mac OS X") ||
+					OSVersion.Equals("WinRT") ||
+					Environment.GetEnvironmentVariable("FNA_OPENGL_DISABLE_LATESWAPTEAR") == "1"
+				);
+				if (disableLateSwapTear)
+				{
+					SDL.SDL_GL_SetSwapInterval(1);
+				}
+				else
+				{
+					if (SDL.SDL_GL_SetSwapInterval(-1) != -1)
+					{
+						FNALoggerEXT.LogInfo("Using EXT_swap_control_tear VSync!");
+					}
+					else
+					{
+						FNALoggerEXT.LogInfo("EXT_swap_control_tear unsupported. Fall back to standard VSync.");
+						SDL.SDL_ClearError();
+						SDL.SDL_GL_SetSwapInterval(1);
+					}
+				}
+			}
+			else if (interval == PresentInterval.Immediate)
+			{
+				SDL.SDL_GL_SetSwapInterval(0);
+			}
+			else if (interval == PresentInterval.Two)
+			{
+				SDL.SDL_GL_SetSwapInterval(2);
+			}
+			else
+			{
+				throw new NotSupportedException("Unrecognized PresentInterval!");
+			}
+		}
 
 		public void SetViewport(Viewport vp, bool renderTargetBound)
 		{
@@ -3196,6 +3268,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					GLenum.GL_COLOR_BUFFER_BIT,
 					GLenum.GL_LINEAR
 				);
+				/* Don't invalidate the backbuffer here! */
 				BindDrawFramebuffer(prevDrawBuffer);
 				BindReadFramebuffer(resolveFramebufferDraw);
 			}
@@ -3369,6 +3442,15 @@ namespace Microsoft.Xna.Framework.Graphics
 					GLenum.GL_COLOR_BUFFER_BIT,
 					GLenum.GL_LINEAR
 				);
+				/* Invalidate the MSAA buffer */
+				if (supportsFBOInvalidation)
+				{
+					glInvalidateFramebuffer(
+						GLenum.GL_READ_FRAMEBUFFER,
+						attachments.Length + 2,
+						drawBuffersArray
+					);
+				}
 				if (scissorTestEnable)
 				{
 					glEnable(GLenum.GL_SCISSOR_TEST);

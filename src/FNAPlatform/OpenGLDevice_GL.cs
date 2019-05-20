@@ -55,7 +55,6 @@ namespace Microsoft.Xna.Framework.Graphics
 			GL_DEPTH_TEST =				0x0B71,
 			GL_STENCIL_TEST =			0x0B90,
 			// Points
-			GL_PROGRAM_POINT_SIZE =			0x8642,
 			GL_POINT_SPRITE =			0x8861,
 			GL_COORD_REPLACE =			0x8862,
 			// Polygons
@@ -705,6 +704,14 @@ namespace Microsoft.Xna.Framework.Graphics
 			GLenum filter
 		);
 		private BlitFramebuffer glBlitFramebuffer;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void InvalidateFramebuffer(
+			GLenum target,
+			int numAttachments,
+			IntPtr attachments
+		);
+		InvalidateFramebuffer glInvalidateFramebuffer;
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate void GenRenderbuffers(
@@ -1518,6 +1525,26 @@ namespace Microsoft.Xna.Framework.Graphics
 			catch
 			{
 				SupportsHardwareInstancing = false;
+			}
+
+			/* ARB_invalidate_subdata makes target swaps faster on mobile targets */
+			supportsFBOInvalidation = useES3; // FIXME: Does desktop benefit from this?
+			try
+			{
+				IntPtr ifbo = SDL.SDL_GL_GetProcAddress("glInvalidateFramebuffer");
+				if (ifbo == IntPtr.Zero && useES3)
+				{
+					/* ES2 has EXT_discard_framebuffer as a fallback */
+					ifbo = SDL.SDL_GL_GetProcAddress("glDiscardFramebufferEXT");
+				}
+				glInvalidateFramebuffer = (InvalidateFramebuffer) Marshal.GetDelegateForFunctionPointer(
+					ifbo,
+					typeof(InvalidateFramebuffer)
+				);
+			}
+			catch
+			{
+				supportsFBOInvalidation = false;
 			}
 
 			/* Indexed color mask is a weird thing.

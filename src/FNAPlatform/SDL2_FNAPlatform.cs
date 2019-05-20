@@ -188,8 +188,18 @@ namespace Microsoft.Xna.Framework
 
 		#region Window Methods
 
-		public static GameWindow CreateWindow()
+		private static bool PrepareVKAttributes()
 		{
+			// Who will write the VulkanDevice.. will it be YOU?
+			return false;
+		}
+
+		private static bool PrepareGLAttributes()
+		{
+			/* TODO: For platforms not using OpenGL (Vulkan/Metal),
+			 * return false to avoid OpenGL WSI calls.
+			 */
+
 			// GLContext environment variables
 			bool forceES3 = Environment.GetEnvironmentVariable(
 				"FNA_OPENGL_FORCE_ES3"
@@ -210,18 +220,6 @@ namespace Microsoft.Xna.Framework
 				OSVersion.Equals("Emscripten")
 			);
 
-			// Set and initialize the SDL2 window
-			SDL.SDL_WindowFlags initFlags = (
-				SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL |
-				SDL.SDL_WindowFlags.SDL_WINDOW_HIDDEN |
-				SDL.SDL_WindowFlags.SDL_WINDOW_INPUT_FOCUS |
-				SDL.SDL_WindowFlags.SDL_WINDOW_MOUSE_FOCUS
-			);
-
-			if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
-			{
-				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_ALLOW_HIGHDPI;
-			}
 
 			int depthSize = 24;
 			int stencilSize = 8;
@@ -319,6 +317,34 @@ namespace Microsoft.Xna.Framework
 				(int) SDL.SDL_GLcontext.SDL_GL_CONTEXT_DEBUG_FLAG
 			);
 #endif
+			return true;
+		}
+
+		public static GameWindow CreateWindow()
+		{
+
+			// Set and initialize the SDL2 window
+			SDL.SDL_WindowFlags initFlags = (
+				SDL.SDL_WindowFlags.SDL_WINDOW_HIDDEN |
+				SDL.SDL_WindowFlags.SDL_WINDOW_INPUT_FOCUS |
+				SDL.SDL_WindowFlags.SDL_WINDOW_MOUSE_FOCUS
+			);
+
+			bool vulkan = false, opengl = false;
+			if (vulkan = PrepareVKAttributes())
+			{
+				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN;
+			}
+			else if (opengl = PrepareGLAttributes())
+			{
+				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL;
+			}
+
+			if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
+			{
+				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_ALLOW_HIGHDPI;
+			}
+
 			string title = MonoGame.Utilities.AssemblyHelper.GetDefaultWindowTitle();
 			IntPtr window = SDL.SDL_CreateWindow(
 				title,
@@ -344,7 +370,7 @@ namespace Microsoft.Xna.Framework
 			SDL.SDL_DisableScreenSaver();
 
 			// We hide the mouse cursor by default.
-			SDL.SDL_ShowCursor(0);
+			OnIsMouseVisibleChanged(false);
 
 			/* iOS requires a GL context to get the drawable size
 			 * of the screen, so we create a temporary one here.
@@ -361,24 +387,34 @@ namespace Microsoft.Xna.Framework
 			 * -flibit
 			 */
 			int drawX, drawY;
-			SDL.SDL_GL_GetDrawableSize(window, out drawX, out drawY);
+			if (vulkan)
+			{
+				SDL.SDL_Vulkan_GetDrawableSize(window, out drawX, out drawY);
+			}
+			else if (opengl)
+			{
+				SDL.SDL_GL_GetDrawableSize(window, out drawX, out drawY);
+			}
+			else
+			{
+				throw new InvalidOperationException("Metal? Glide? What?");
+			}
 			if (	drawX == GraphicsDeviceManager.DefaultBackBufferWidth &&
 				drawY == GraphicsDeviceManager.DefaultBackBufferHeight	)
 			{
 				Environment.SetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI", "0");
 			}
+			else
+			{
+				// Store the full retina resolution of the display
+				RetinaWidth = drawX;
+				RetinaHeight = drawY;
+			}
 
 			// We're done with that temporary GL context.
-			if (OSVersion.Equals("iOS"))
+			if (tempGLContext != IntPtr.Zero)
 			{
 				SDL.SDL_GL_DeleteContext(tempGLContext);
-
-				if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
-				{
-					// Store the full retina resolution of the display
-					RetinaWidth = drawX;
-					RetinaHeight = drawY;
-				}
 			}
 
 			return new FNAWindow(
@@ -1117,47 +1153,6 @@ namespace Microsoft.Xna.Framework
 		#endregion
 
 		#region Graphics Methods
-
-		public static void SetPresentationInterval(PresentInterval interval)
-		{
-			if (interval == PresentInterval.Default || interval == PresentInterval.One)
-			{
-				bool disableLateSwapTear = (
-					OSVersion.Equals("Mac OS X") ||
-					OSVersion.Equals("WinRT") ||
-					Environment.GetEnvironmentVariable("FNA_OPENGL_DISABLE_LATESWAPTEAR") == "1"
-				);
-				if (disableLateSwapTear)
-				{
-					SDL.SDL_GL_SetSwapInterval(1);
-				}
-				else
-				{
-					if (SDL.SDL_GL_SetSwapInterval(-1) != -1)
-					{
-						FNALoggerEXT.LogInfo("Using EXT_swap_control_tear VSync!");
-					}
-					else
-					{
-						FNALoggerEXT.LogInfo("EXT_swap_control_tear unsupported. Fall back to standard VSync.");
-						SDL.SDL_ClearError();
-						SDL.SDL_GL_SetSwapInterval(1);
-					}
-				}
-			}
-			else if (interval == PresentInterval.Immediate)
-			{
-				SDL.SDL_GL_SetSwapInterval(0);
-			}
-			else if (interval == PresentInterval.Two)
-			{
-				SDL.SDL_GL_SetSwapInterval(2);
-			}
-			else
-			{
-				throw new NotSupportedException("Unrecognized PresentInterval!");
-			}
-		}
 
 		public static GraphicsAdapter[] GetGraphicsAdapters()
 		{
