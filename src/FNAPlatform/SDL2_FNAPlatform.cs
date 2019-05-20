@@ -48,6 +48,253 @@ namespace Microsoft.Xna.Framework
 		/* This is needed for asynchronous window events */
 		private static List<Game> activeGames = new List<Game>();
 
+		// Wine change!
+		class HackForm : System.Windows.Forms.Form
+		{
+			private bool dirty = false;
+			private bool Dirty
+			{
+				get
+				{
+					return dirty;
+				}
+				set
+				{
+					if (value)
+					{
+						formBorderStyle = FormBorderStyle;
+						windowState = WindowState;
+					}
+					dirty = value;
+				}
+			}
+
+			private System.Windows.Forms.FormBorderStyle formBorderStyle =
+				System.Windows.Forms.FormBorderStyle.FixedDialog;
+			public new System.Windows.Forms.FormBorderStyle FormBorderStyle
+			{
+				get
+				{
+					if (Dirty)
+					{
+						return formBorderStyle;
+					}
+					uint flags = SDL.SDL_GetWindowFlags(sdlHandle);
+					if ((flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_BORDERLESS) != 0 || FakeFullscreenWindow)
+					{
+						return System.Windows.Forms.FormBorderStyle.None;
+					}
+					if ((flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_RESIZABLE) != 0)
+					{
+						return System.Windows.Forms.FormBorderStyle.Sizable;
+					}
+					return System.Windows.Forms.FormBorderStyle.FixedDialog;
+				}
+				set
+				{
+					Dirty = true;
+					formBorderStyle = value;
+				}
+			}
+
+			private System.Windows.Forms.FormWindowState windowState =
+				System.Windows.Forms.FormWindowState.Normal;
+			public new System.Windows.Forms.FormWindowState WindowState
+			{
+				get
+				{
+					if (Dirty)
+					{
+						return windowState;
+					}
+					uint flags = SDL.SDL_GetWindowFlags(sdlHandle);
+					if ((flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0 || FakeFullscreenWindow)
+					{
+						return System.Windows.Forms.FormWindowState.Maximized;
+					}
+					if ((flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_MINIMIZED) != 0)
+					{
+						return System.Windows.Forms.FormWindowState.Minimized;
+					}
+					return System.Windows.Forms.FormWindowState.Normal;
+				}
+				set
+				{
+					Dirty = true;
+					windowState = value;
+				}
+			}
+
+			private Rectangle windowedBounds = new Rectangle();
+			private Rectangle bounds = new Rectangle();
+			private Rectangle SDLBounds
+			{
+				get
+				{
+					return GetWindowBounds(sdlHandle);
+				}
+				set
+				{
+					SDL.SDL_SetWindowSize(
+						sdlHandle,
+						value.Width,
+						value.Height
+					);
+					SDL.SDL_SetWindowPosition(
+						sdlHandle,
+						value.X,
+						value.Y
+					);
+				}
+			}
+
+			private IntPtr sdlHandle = IntPtr.Zero;
+			private bool FakeFullscreenWindow = false;
+
+			public HackForm() : base()
+			{
+				// FIXME: This might reduce Control size updates?
+				ResizeRedraw = false;
+			}
+
+			public IntPtr RecreateSDLWindow(IntPtr sdlWindow, string title)
+			{
+				/* Using the SDL window's GL context format,
+				 * create another SDL window using this Handle,
+				 * then destroy the old window
+				 */
+				SDL.SDL_SetHint(
+					SDL.SDL_HINT_VIDEO_WINDOW_SHARE_PIXEL_FORMAT,
+					string.Format("{0:x8}", sdlWindow.ToInt32())
+				);
+				IntPtr formWindow = SDL.SDL_CreateWindowFrom(Handle);
+				SDL.SDL_SetHint(
+					SDL.SDL_HINT_VIDEO_WINDOW_SHARE_PIXEL_FORMAT,
+					string.Empty
+				);
+				SDL.SDL_DestroyWindow(sdlWindow);
+
+				// Set a bunch of default values on SDL's side
+				SDL.SDL_SetWindowSize(
+					formWindow,
+					GraphicsDeviceManager.DefaultBackBufferWidth,
+					GraphicsDeviceManager.DefaultBackBufferHeight
+				);
+				SDL.SDL_SetWindowPosition(
+					formWindow,
+					SDL.SDL_WINDOWPOS_CENTERED,
+					SDL.SDL_WINDOWPOS_CENTERED
+				);
+				SDL.SDL_SetWindowTitle(formWindow, title);
+				SDL.SDL_SetWindowResizable(formWindow, SDL.SDL_bool.SDL_FALSE);
+
+				// Reload this, so entry points work again
+				SDL.SDL_GL_LoadLibrary(null);
+
+				// Set this Forms value just to be safe
+				int fx, fy, fw, fh;
+				SDL.SDL_GetWindowPosition(formWindow, out fx, out fy);
+				SDL.SDL_GetWindowSize(formWindow, out fw, out fh);
+				SetBounds(fx, fy, fw, fh);
+
+				sdlHandle = formWindow;
+				return formWindow;
+			}
+
+			public void SDLWindowChanged()
+			{
+				bounds = SDLBounds;
+				if ((SDL.SDL_GetWindowFlags(sdlHandle) & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_FULLSCREEN) == 0 && !FakeFullscreenWindow)
+				{
+					windowedBounds = bounds;
+				}
+			}
+
+			public void ApplyChanges(Game game)
+			{
+				if (!Dirty)
+				{
+					return;
+				}
+
+				GraphicsDeviceManager gdm = (GraphicsDeviceManager) game.Services.GetService(typeof(IGraphicsDeviceManager));
+				bool fullscreen = gdm.IsFullScreen;
+				bool borderless =
+					FormBorderStyle == System.Windows.Forms.FormBorderStyle.None;
+				bool maximized =
+					WindowState == System.Windows.Forms.FormWindowState.Maximized;
+				bool wasFakeFullscreenWindow = FakeFullscreenWindow;
+				FakeFullscreenWindow = maximized && borderless;
+
+				FNALoggerEXT.LogInfo(
+					"[wine-fna] Applying changes from HackForm to SDL window:" +
+					"\n\tCurrently fullscreen: " + fullscreen.ToString() +
+					"\n\tFake fullscreen: " + FakeFullscreenWindow.ToString() +
+					"\n\tBorder: " + FormBorderStyle.ToString() +
+					"\n\tState: " + WindowState.ToString()
+				);
+
+				if (FakeFullscreenWindow)
+				{
+					FNALoggerEXT.LogInfo("[wine-fna] Game expects borderless fullscreen... give it proper fullscreen instead.");
+
+					if (!fullscreen)
+					{
+						windowedBounds = SDLBounds;
+					}
+
+					FNALoggerEXT.LogInfo(
+						"[wine-fna] Last window size: " +
+						windowedBounds.ToString()
+					);
+
+					// This feels so wrong...
+					DisplayMode dm = gdm.GraphicsDevice.DisplayMode;
+					gdm.PreferredBackBufferWidth = dm.Width;
+					gdm.PreferredBackBufferHeight = dm.Height;
+					gdm.ApplyChanges();
+
+					bounds = SDLBounds;
+				}
+				else
+				{
+					if (wasFakeFullscreenWindow)
+					{
+						FNALoggerEXT.LogInfo("[wine-fna] Leaving fake borderless fullscreen");
+						gdm.IsFullScreen = false;
+					}
+					game.Window.IsBorderlessEXT = borderless;
+					if (maximized)
+					{
+						SDL.SDL_MaximizeWindow(sdlHandle);
+						bounds = SDLBounds;
+					}
+					else
+					{
+						SDL.SDL_RestoreWindow(sdlHandle);
+						SDLBounds = bounds = windowedBounds;
+					}
+
+					// This also feels so wrong...
+					FNALoggerEXT.LogInfo(
+						"[wine-fna] New window size: " + bounds.ToString()
+					);
+					gdm.PreferredBackBufferWidth = bounds.Width;
+					gdm.PreferredBackBufferHeight = bounds.Height;
+					gdm.ApplyChanges();
+				}
+
+				Dirty = false;
+			}
+
+			protected override void WndProc(ref System.Windows.Forms.Message m)
+			{
+				// TODO: Fix this to prevent Control size updates
+				base.WndProc(ref m);
+			}
+		}
+		private static Dictionary<IntPtr, HackForm> forms = new Dictionary<IntPtr, HackForm>();
+
 		#endregion
 
 		#region Init/Exit Methods
@@ -354,6 +601,12 @@ namespace Microsoft.Xna.Framework
 				GraphicsDeviceManager.DefaultBackBufferHeight,
 				initFlags
 			);
+
+			// Wine change!
+			HackForm form = new HackForm();
+			window = form.RecreateSDLWindow(window, title);
+			forms.Add(window, form);
+
 			if (window == IntPtr.Zero)
 			{
 				/* If this happens, the GL attributes were
@@ -449,6 +702,9 @@ namespace Microsoft.Xna.Framework
 			}
 
 			SDL.SDL_DestroyWindow(window.Handle);
+
+			// Wine change!
+			forms.Remove(window.Handle);
 		}
 
 		public static void ApplyWindowChanges(
@@ -1003,6 +1259,13 @@ namespace Microsoft.Xna.Framework
 							if (GetWindowResizable(game.Window.Handle))
 							{
 								((FNAWindow) game.Window).INTERNAL_ClientSizeChanged();
+
+								// Wine change!
+								HackForm form;
+								if (forms.TryGetValue(game.Window.Handle, out form))
+								{
+									form.SDLWindowChanged();
+								}
 							}
 						}
 						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_EXPOSED)
@@ -1124,6 +1387,9 @@ namespace Microsoft.Xna.Framework
 
 				Keyboard.SetKeys(keys);
 				game.Tick();
+
+				// Wine change!
+				forms[game.Window.Handle].ApplyChanges(game);
 			}
 
 			// Okay, we don't care about the events anymore
@@ -1257,6 +1523,16 @@ namespace Microsoft.Xna.Framework
 		public static void OnIsMouseVisibleChanged(bool visible)
 		{
 			SDL.SDL_ShowCursor(visible ? 1 : 0);
+
+			// Wine change!
+			if (visible)
+			{
+				System.Windows.Forms.Cursor.Show();
+			}
+			else
+			{
+				System.Windows.Forms.Cursor.Hide();
+			}
 		}
 
 		public static bool GetRelativeMouseMode()

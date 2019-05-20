@@ -339,7 +339,7 @@ RES = \
 	-resource:$(RESDIR)/SpriteEffect.fxb,$(RESNAME).SpriteEffect.fxb \
 	-resource:src/Graphics/Effect/YUVToRGBA/YUVToRGBAEffect.fxb,$(RESNAME).YUVToRGBAEffect.fxb
 
-CSFLAGS=-keyfile:mono.snk
+CSFLAGS=-keyfile:mono.snk -r:System.Windows.Forms
 
 # Targets
 
