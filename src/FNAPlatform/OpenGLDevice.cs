@@ -753,10 +753,6 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Initialize texture collection array
 			int numSamplers;
 			glGetIntegerv(GLenum.GL_MAX_TEXTURE_IMAGE_UNITS, out numSamplers);
-			numSamplers = Math.Min(
-				numSamplers,
-				GraphicsDevice.MAX_TEXTURE_SAMPLERS + GraphicsDevice.MAX_VERTEXTEXTURE_SAMPLERS
-			);
 			Textures = new OpenGLTexture[numSamplers];
 			for (int i = 0; i < numSamplers; i += 1)
 			{
@@ -822,7 +818,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				glGenVertexArrays(1, out vao);
 				glBindVertexArray(vao);
 			}
-			else
+			else if (glTexEnvi != null)
 			{
 				// Compat-only, but needed for PSIZE0 accuracy
 				glTexEnvi(GLenum.GL_POINT_SPRITE, GLenum.GL_COORD_REPLACE, 1);
