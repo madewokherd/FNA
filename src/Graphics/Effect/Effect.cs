@@ -255,6 +255,12 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Double the ugly, double the fun!
 			INTERNAL_parseEffectStruct();
 
+			// Copy texture parameters, if applicable
+			for (int i = 0; i < cloneSource.Parameters.Count; i += 1)
+			{
+				Parameters[i].texture = cloneSource.Parameters[i].texture;
+			}
+
 			// The default technique is whatever the current technique was.
 			for (int i = 0; i < cloneSource.Techniques.Count; i += 1)
 			{
@@ -735,19 +741,19 @@ namespace Microsoft.Xna.Framework.Graphics
 					}
 					else if (type == MojoShader.MOJOSHADER_samplerStateType.MOJOSHADER_SAMP_MIPMAPLODBIAS)
 					{
-						float* val = (float*) states[i].value.values;
+						float* val = (float*) states[j].value.values;
 						pipelineCache.MipMapLODBias = *val;
 						samplerChanged = true;
 					}
 					else if (type == MojoShader.MOJOSHADER_samplerStateType.MOJOSHADER_SAMP_MAXMIPLEVEL)
 					{
-						int* val = (int*) states[i].value.values;
+						int* val = (int*) states[j].value.values;
 						pipelineCache.MaxMipLevel = *val;
 						samplerChanged = true;
 					}
 					else if (type == MojoShader.MOJOSHADER_samplerStateType.MOJOSHADER_SAMP_MAXANISOTROPY)
 					{
-						int* val = (int*) states[i].value.values;
+						int* val = (int*) states[j].value.values;
 						pipelineCache.MaxAnisotropy = *val;
 						samplerChanged = true;
 					}
