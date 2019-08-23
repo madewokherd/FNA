@@ -505,7 +505,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		private IntPtr currentTechnique = IntPtr.Zero;
 		private uint currentPass = 0;
 
-		private int flipViewport = 1;
+		private bool renderTargetBound = false;
 
 		private bool effectApplied = false;
 
@@ -827,8 +827,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void ResetBackbuffer(
 			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter,
-			bool renderTargetBound
+			GraphicsAdapter adapter
 		) {
 			if (UseFauxBackbuffer(presentationParameters, adapter.CurrentDisplayMode))
 			{
@@ -845,8 +844,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				else
 				{
 					Backbuffer.ResetFramebuffer(
-						presentationParameters,
-						renderTargetBound
+						presentationParameters
 					);
 				}
 			}
@@ -864,8 +862,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				else
 				{
 					Backbuffer.ResetFramebuffer(
-						presentationParameters,
-						renderTargetBound
+						presentationParameters
 					);
 				}
 			}
@@ -1282,7 +1279,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 		}
 
-		public void SetViewport(Viewport vp, bool renderTargetBound)
+		public void SetViewport(Viewport vp)
 		{
 			// Flip viewport when target is not bound
 			if (!renderTargetBound)
@@ -1309,10 +1306,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 		}
 
-		public void SetScissorRect(
-			Rectangle scissorRect,
-			bool renderTargetBound
-		) {
+		public void SetScissorRect(Rectangle scissorRect)
+		{
 			// Flip rectangle when target is not bound
 			if (!renderTargetBound)
 			{
@@ -1564,10 +1559,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 		}
 
-		public void ApplyRasterizerState(
-			RasterizerState rasterizerState,
-			bool renderTargetBound
-		) {
+		public void ApplyRasterizerState(RasterizerState rasterizerState)
+		{
 			if (rasterizerState.ScissorTestEnable != scissorTestEnable)
 			{
 				scissorTestEnable = rasterizerState.ScissorTestEnable;
@@ -2028,7 +2021,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 
 			MojoShader.MOJOSHADER_glProgramReady();
-			MojoShader.MOJOSHADER_glProgramViewportFlip(flipViewport);
+			MojoShader.MOJOSHADER_glProgramViewportInfo(
+				viewport.Width, viewport.Height,
+				Backbuffer.Width, Backbuffer.Height,
+				renderTargetBound ? 1 : 0 // lol C#
+			);
 		}
 
 		public void ApplyVertexAttributes(
@@ -2094,7 +2091,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 
 			MojoShader.MOJOSHADER_glProgramReady();
-			MojoShader.MOJOSHADER_glProgramViewportFlip(flipViewport);
+			MojoShader.MOJOSHADER_glProgramViewportInfo(
+				viewport.Width, viewport.Height,
+				Backbuffer.Width, Backbuffer.Height,
+				renderTargetBound ? 1 : 0 // lol C#
+			);
 		}
 
 		private void FlushGLVertexAttributes()
@@ -3397,13 +3398,13 @@ namespace Microsoft.Xna.Framework.Graphics
 						(Backbuffer as OpenGLBackbuffer).Handle :
 						0
 				);
-				flipViewport = 1;
+				renderTargetBound = false;
 				return;
 			}
 			else
 			{
 				BindFramebuffer(targetFramebuffer);
-				flipViewport = -1;
+				renderTargetBound = true;
 			}
 
 			int i;
@@ -4113,8 +4114,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 
 			public void ResetFramebuffer(
-				PresentationParameters presentationParameters,
-				bool renderTargetBound
+				PresentationParameters presentationParameters
 			) {
 				Width = presentationParameters.BackBufferWidth;
 				Height = presentationParameters.BackBufferHeight;
@@ -4285,8 +4285,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 
 			public void ResetFramebuffer(
-				PresentationParameters presentationParameters,
-				bool renderTargetBound
+				PresentationParameters presentationParameters
 			) {
 				Width = presentationParameters.BackBufferWidth;
 				Height = presentationParameters.BackBufferHeight;
