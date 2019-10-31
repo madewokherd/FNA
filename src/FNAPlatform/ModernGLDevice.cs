@@ -390,6 +390,9 @@ namespace Microsoft.Xna.Framework.Graphics
 		private IntPtr ldTechnique = IntPtr.Zero;
 		private uint ldPass = 0;
 
+		// Some vertex declarations may have overlapping attributes :/
+		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 10];
+
 		#endregion
 
 		#region Render Target Cache Variables
@@ -1959,13 +1962,15 @@ namespace Microsoft.Xna.Framework.Graphics
 				currentPass != ldPass ||
 				effectApplied	)
 			{
-				/* There's this weird case where you can have multiple vertbuffers,
-				 * but they will have overlapping attributes. It seems like the
-				 * first buffer gets priority, so start with the last one so the
-				 * first buffer's attributes are what's bound at the end.
+				/* There's this weird case where you can have overlapping
+				 * vertex usage/index combinations. It seems like the first
+				 * attrib gets priority, so whenever a duplicate attribute
+				 * exists, give it the next available index. If that fails, we
+				 * have to crash :/
 				 * -flibit
 				 */
-				for (int i = numBindings - 1; i >= 0; i -= 1)
+				Array.Clear(attrUse, 0, attrUse.Length);
+				for (int i = 0; i < numBindings; i += 1)
 				{
 					BindVertexBuffer(bindings[i].VertexBuffer.buffer);
 					VertexDeclaration vertexDeclaration = bindings[i].VertexBuffer.VertexDeclaration;
@@ -1975,9 +1980,28 @@ namespace Microsoft.Xna.Framework.Graphics
 					);
 					foreach (VertexElement element in vertexDeclaration.elements)
 					{
+						int usage = (int) element.VertexElementUsage;
+						int index = element.UsageIndex;
+						if (attrUse[usage, index])
+						{
+							index = -1;
+							for (int j = 0; j < 10; j += 1)
+							{
+								if (!attrUse[usage, j])
+								{
+									index = j;
+									break;
+								}
+							}
+							if (index < 0)
+							{
+								throw new InvalidOperationException("Vertex usage collision!");
+							}
+						}
+						attrUse[usage, index] = true;
 						int attribLoc = MojoShader.MOJOSHADER_glGetVertexAttribLocation(
-							XNAToGL.VertexAttribUsage[(int) element.VertexElementUsage],
-							element.UsageIndex
+							XNAToGL.VertexAttribUsage[usage],
+							index
 						);
 						if (attribLoc == -1)
 						{
@@ -2049,11 +2073,38 @@ namespace Microsoft.Xna.Framework.Graphics
 				currentPass != ldPass ||
 				effectApplied	)
 			{
+				/* There's this weird case where you can have overlapping
+				 * vertex usage/index combinations. It seems like the first
+				 * attrib gets priority, so whenever a duplicate attribute
+				 * exists, give it the next available index. If that fails, we
+				 * have to crash :/
+				 * -flibit
+				 */
+				Array.Clear(attrUse, 0, attrUse.Length);
 				foreach (VertexElement element in vertexDeclaration.elements)
 				{
+					int usage = (int) element.VertexElementUsage;
+					int index = element.UsageIndex;
+					if (attrUse[usage, index])
+					{
+						index = -1;
+						for (int j = 0; j < 10; j += 1)
+						{
+							if (!attrUse[usage, j])
+							{
+								index = j;
+								break;
+							}
+						}
+						if (index < 0)
+						{
+							throw new InvalidOperationException("Vertex usage collision!");
+						}
+					}
+					attrUse[usage, index] = true;
 					int attribLoc = MojoShader.MOJOSHADER_glGetVertexAttribLocation(
-						XNAToGL.VertexAttribUsage[(int) element.VertexElementUsage],
-						element.UsageIndex
+						XNAToGL.VertexAttribUsage[usage],
+						index
 					);
 					if (attribLoc == -1)
 					{
@@ -2455,6 +2506,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				height
 			);
 
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
+
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2489,6 +2565,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				depth
 			);
 
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
+
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2519,6 +2620,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				size,
 				size
 			);
+
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
 
 #if !DISABLE_THREADING
 			});
@@ -2713,7 +2839,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					0,
 					tex.Width,
 					tex.Height,
-					GLenum.GL_LUMINANCE,
+					GLenum.GL_RED,
 					GLenum.GL_UNSIGNED_BYTE,
 					ptr
 				);
@@ -3653,7 +3779,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				GLenum.GL_RGBA,				// SurfaceFormat.Rgba1010102
 				GLenum.GL_RG,				// SurfaceFormat.Rg32
 				GLenum.GL_RGBA,				// SurfaceFormat.Rgba64
-				GLenum.GL_LUMINANCE,			// SurfaceFormat.Alpha8
+				GLenum.GL_RED,				// SurfaceFormat.Alpha8
 				GLenum.GL_RED,				// SurfaceFormat.Single
 				GLenum.GL_RG,				// SurfaceFormat.Vector2
 				GLenum.GL_RGBA,				// SurfaceFormat.Vector4
@@ -3678,7 +3804,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				GLenum.GL_RGB10_A2_EXT,				// SurfaceFormat.Rgba1010102
 				GLenum.GL_RG16,					// SurfaceFormat.Rg32
 				GLenum.GL_RGBA16,				// SurfaceFormat.Rgba64
-				GLenum.GL_LUMINANCE8,				// SurfaceFormat.Alpha8
+				GLenum.GL_R8,					// SurfaceFormat.Alpha8
 				GLenum.GL_R32F,					// SurfaceFormat.Single
 				GLenum.GL_RG32F,				// SurfaceFormat.Vector2
 				GLenum.GL_RGBA32F,				// SurfaceFormat.Vector4
