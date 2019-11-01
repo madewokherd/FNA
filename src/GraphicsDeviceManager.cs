@@ -141,19 +141,17 @@ namespace Microsoft.Xna.Framework
 			}
 		}
 
+		private DisplayOrientation INTERNAL_supportedOrientations;
 		public DisplayOrientation SupportedOrientations
 		{
 			get
 			{
-				return supportedOrientations;
+				return INTERNAL_supportedOrientations;
 			}
 			set
 			{
-				supportedOrientations = value;
-				if (game.Window != null)
-				{
-					game.Window.SetSupportedOrientations(supportedOrientations);
-				}
+				INTERNAL_supportedOrientations = value;
+				prefsChanged = true;
 			}
 		}
 
@@ -163,7 +161,6 @@ namespace Microsoft.Xna.Framework
 
 		private Game game;
 		private GraphicsDevice graphicsDevice;
-		private DisplayOrientation supportedOrientations;
 		private bool drawBegun;
 		private bool disposed;
 		private bool prefsChanged;
@@ -207,17 +204,17 @@ namespace Microsoft.Xna.Framework
 
 			this.game = game;
 
-			supportedOrientations = DisplayOrientation.Default;
+			INTERNAL_supportedOrientations = DisplayOrientation.Default;
 
-			PreferredBackBufferHeight = DefaultBackBufferHeight;
-			PreferredBackBufferWidth = DefaultBackBufferWidth;
+			INTERNAL_preferredBackBufferHeight = DefaultBackBufferHeight;
+			INTERNAL_preferredBackBufferWidth = DefaultBackBufferWidth;
 
-			PreferredBackBufferFormat = SurfaceFormat.Color;
-			PreferredDepthStencilFormat = DepthFormat.Depth24;
+			INTERNAL_preferredBackBufferFormat = SurfaceFormat.Color;
+			INTERNAL_preferredDepthStencilFormat = DepthFormat.Depth24;
 
-			SynchronizeWithVerticalRetrace = true;
+			INTERNAL_synchronizeWithVerticalRetrace = true;
 
-			PreferMultiSampling = false;
+			INTERNAL_preferMultiSampling = false;
 
 			if (game.Services.GetService(typeof(IGraphicsDeviceManager)) != null)
 			{
@@ -227,6 +224,7 @@ namespace Microsoft.Xna.Framework
 			game.Services.AddService(typeof(IGraphicsDeviceManager), this);
 			game.Services.AddService(typeof(IGraphicsDeviceService), this);
 
+			prefsChanged = true;
 			useResizedBackBuffer = false;
 			game.Window.ClientSizeChanged += INTERNAL_OnClientSizeChanged;
 		}
@@ -294,6 +292,8 @@ namespace Microsoft.Xna.Framework
 			gdi.GraphicsProfile = GraphicsDevice.GraphicsProfile;
 			gdi.PresentationParameters = GraphicsDevice.PresentationParameters.Clone();
 
+			bool supportsOrientations = FNAPlatform.SupportsOrientationChanges();
+
 			/* Apply the GraphicsDevice changes to the new Parameters.
 			 * Note that PreparingDeviceSettings can override any of these!
 			 * -flibit
@@ -310,7 +310,7 @@ namespace Microsoft.Xna.Framework
 			}
 			else
 			{
-				if (!FNAPlatform.SupportsOrientationChanges())
+				if (!supportsOrientations)
 				{
 					gdi.PresentationParameters.BackBufferWidth =
 						PreferredBackBufferWidth;
@@ -369,6 +369,12 @@ namespace Microsoft.Xna.Framework
 			);
 
 			// Reset!
+			if (supportsOrientations)
+			{
+				game.Window.SetSupportedOrientations(
+					INTERNAL_supportedOrientations
+				);
+			}
 			game.Window.BeginScreenDeviceChange(
 				gdi.PresentationParameters.IsFullScreen
 			);
