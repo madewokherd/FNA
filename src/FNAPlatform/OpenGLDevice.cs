@@ -551,8 +551,21 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private bool useES3;
 		private bool useCoreProfile;
+		private bool togglePointSprite;
 		private DepthFormat windowDepthFormat;
 		private uint vao;
+
+		#endregion
+
+		#region Private ANGLE Bug Hack
+
+		/* FIXME: THIS CHECK ABSOLUTELY SHOULD NOT EXIST! FIX THIS BUG:
+		 *
+		 * https://bugs.chromium.org/p/angleproject/issues/detail?id=3402
+		 *
+		 * -flibit
+		 */
+		private bool BUG_HACK_NOTANGLE;
 
 		#endregion
 
@@ -656,6 +669,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			FNALoggerEXT.LogInfo("OpenGL Driver: " + version);
 			FNALoggerEXT.LogInfo("OpenGL Vendor: " + vendor);
 
+			// FIXME: REMOVE ME ASAP!
+			BUG_HACK_NOTANGLE = !renderer.Contains("Direct3D11");
+
 			// Initialize entry points
 			LoadGLEntryPoints(string.Format(
 				"Device: {0}\nDriver: {1}\nVendor: {2}",
@@ -697,7 +713,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			// Some users might want pixely upscaling...
 			backbufferScaleMode = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_BACKBUFFER_SCALE_NEAREST"
+				"FNA_GRAPHICS_BACKBUFFER_SCALE_NEAREST"
 			) == "1" ? GLenum.GL_NEAREST : GLenum.GL_LINEAR;
 
 			// Load the extension list, initialize extension-dependent components
@@ -828,15 +844,28 @@ namespace Microsoft.Xna.Framework.Graphics
 			glGenFramebuffers(1, out resolveFramebufferRead);
 			glGenFramebuffers(1, out resolveFramebufferDraw);
 
-			// Generate and bind a VAO, to shut Core up
+			togglePointSprite = false;
 			if (useCoreProfile)
 			{
+				// Generate and bind a VAO, to shut Core up
 				glGenVertexArrays(1, out vao);
 				glBindVertexArray(vao);
 			}
-			else if (glTexEnvi != null)
+			else if (!useES3)
 			{
-				// Compat-only, but needed for PSIZE0 accuracy
+				/* Compatibility contexts require that point sprites be enabled
+				 * explicitly. However, Apple's drivers have a blantant spec
+				 * violation that disallows a simple glEnable. So, here we are.
+				 * -flibit
+				 */
+				if (SDL.SDL_GetPlatform().Equals("Mac OS X"))
+				{
+					togglePointSprite = true;
+				}
+				else
+				{
+					glEnable(GLenum.GL_POINT_SPRITE);
+				}
 				glTexEnvi(GLenum.GL_POINT_SPRITE, GLenum.GL_COORD_REPLACE, 1);
 			}
 		}
@@ -1215,6 +1244,12 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Bind the index buffer
 			BindIndexBuffer(indices.buffer);
 
+			bool tps = togglePointSprite && primitiveType == PrimitiveType.PointListEXT;
+			if (tps)
+			{
+				glEnable(GLenum.GL_POINT_SPRITE);
+			}
+
 			// Draw!
 			glDrawRangeElementsBaseVertex(
 				XNAToGL.Primitive[(int) primitiveType],
@@ -1225,6 +1260,11 @@ namespace Microsoft.Xna.Framework.Graphics
 				(IntPtr) (startIndex * XNAToGL.IndexSize[(int) indices.IndexElementSize]),
 				baseVertex
 			);
+
+			if (tps)
+			{
+				glDisable(GLenum.GL_POINT_SPRITE);
+			}
 		}
 
 		public void DrawInstancedPrimitives(
@@ -1242,6 +1282,12 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Bind the index buffer
 			BindIndexBuffer(indices.buffer);
 
+			bool tps = togglePointSprite && primitiveType == PrimitiveType.PointListEXT;
+			if (tps)
+			{
+				glEnable(GLenum.GL_POINT_SPRITE);
+			}
+
 			// Draw!
 			glDrawElementsInstancedBaseVertex(
 				XNAToGL.Primitive[(int) primitiveType],
@@ -1251,6 +1297,11 @@ namespace Microsoft.Xna.Framework.Graphics
 				instanceCount,
 				baseVertex
 			);
+
+			if (tps)
+			{
+				glDisable(GLenum.GL_POINT_SPRITE);
+			}
 		}
 
 		public void DrawPrimitives(
@@ -1258,12 +1309,23 @@ namespace Microsoft.Xna.Framework.Graphics
 			int vertexStart,
 			int primitiveCount
 		) {
+			bool tps = togglePointSprite && primitiveType == PrimitiveType.PointListEXT;
+			if (tps)
+			{
+				glEnable(GLenum.GL_POINT_SPRITE);
+			}
+
 			// Draw!
 			glDrawArrays(
 				XNAToGL.Primitive[(int) primitiveType],
 				vertexStart,
 				XNAToGL.PrimitiveVerts(primitiveType, primitiveCount)
 			);
+
+			if (tps)
+			{
+				glDisable(GLenum.GL_POINT_SPRITE);
+			}
 		}
 
 		public void DrawUserIndexedPrimitives(
@@ -1279,6 +1341,12 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Unbind current index buffer.
 			BindIndexBuffer(OpenGLBuffer.NullBuffer);
 
+			bool tps = togglePointSprite && primitiveType == PrimitiveType.PointListEXT;
+			if (tps)
+			{
+				glEnable(GLenum.GL_POINT_SPRITE);
+			}
+
 			// Draw!
 			glDrawRangeElements(
 				XNAToGL.Primitive[(int) primitiveType],
@@ -1291,6 +1359,11 @@ namespace Microsoft.Xna.Framework.Graphics
 					(indexOffset * XNAToGL.IndexSize[(int) indexElementSize])
 				)
 			);
+
+			if (tps)
+			{
+				glDisable(GLenum.GL_POINT_SPRITE);
+			}
 		}
 
 		public void DrawUserPrimitives(
@@ -1299,12 +1372,23 @@ namespace Microsoft.Xna.Framework.Graphics
 			int vertexOffset,
 			int primitiveCount
 		) {
+			bool tps = togglePointSprite && primitiveType == PrimitiveType.PointListEXT;
+			if (tps)
+			{
+				glEnable(GLenum.GL_POINT_SPRITE);
+			}
+
 			// Draw!
 			glDrawArrays(
 				XNAToGL.Primitive[(int) primitiveType],
 				vertexOffset,
 				XNAToGL.PrimitiveVerts(primitiveType, primitiveCount)
 			);
+
+			if (tps)
+			{
+				glDisable(GLenum.GL_POINT_SPRITE);
+			}
 		}
 
 		#endregion
@@ -2641,7 +2725,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			SurfaceFormat format,
 			int width,
 			int height,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -2747,7 +2832,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		public IGLTexture CreateTextureCube(
 			SurfaceFormat format,
 			int size,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -3585,7 +3671,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int width,
 			int height,
 			SurfaceFormat format,
-			int multiSampleCount
+			int multiSampleCount,
+			IGLTexture texture
 		) {
 			uint handle = 0;
 

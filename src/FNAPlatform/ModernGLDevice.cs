@@ -635,7 +635,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			// Some users might want pixely upscaling...
 			backbufferScaleMode = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_BACKBUFFER_SCALE_NEAREST"
+				"FNA_GRAPHICS_BACKBUFFER_SCALE_NEAREST"
 			) == "1" ? GLenum.GL_NEAREST : GLenum.GL_LINEAR;
 
 			// Print GL information
@@ -794,6 +794,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			else
 			{
 				// Compat-only, but needed for PSIZE0 accuracy
+				glEnable(GLenum.GL_POINT_SPRITE);
 				glTexEnvi(GLenum.GL_POINT_SPRITE, GLenum.GL_COORD_REPLACE, 1);
 			}
 		}
@@ -2485,7 +2486,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			SurfaceFormat format,
 			int width,
 			int height,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -2600,7 +2602,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		public IGLTexture CreateTextureCube(
 			SurfaceFormat format,
 			int size,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -3291,7 +3294,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int width,
 			int height,
 			SurfaceFormat format,
-			int multiSampleCount
+			int multiSampleCount,
+			IGLTexture texture
 		) {
 			uint handle = 0;
 
