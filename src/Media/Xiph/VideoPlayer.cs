@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -242,7 +242,14 @@ namespace Microsoft.Xna.Framework.Media
 			// Restore samplers
 			for (int i = 0; i < 3; i += 1)
 			{
-				currentDevice.Textures[i] = oldTextures[i];
+				/* The application may have set a texture ages
+				 * ago, only to not unset after disposing. We
+				 * have to avoid an ObjectDisposedException!
+				 */
+				if (oldTextures[i] == null || !oldTextures[i].IsDisposed)
+				{
+					currentDevice.Textures[i] = oldTextures[i];
+				}
 				currentDevice.SamplerStates[i] = oldSamplers[i];
 				oldTextures[i] = null;
 				oldSamplers[i] = null;

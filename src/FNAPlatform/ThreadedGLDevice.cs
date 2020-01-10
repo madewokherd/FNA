@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -114,6 +114,19 @@ namespace Microsoft.Xna.Framework.Graphics
 				ForceToMainThread(() =>
 				{
 					result = GLDevice.SupportsHardwareInstancing;
+				}); // End ForceToMainThread
+				return result;
+			}
+		}
+
+		public bool SupportsNoOverwrite
+		{
+			get
+			{
+				bool result = false;
+				ForceToMainThread(() =>
+				{
+					result = GLDevice.SupportsNoOverwrite;
 				}); // End ForceToMainThread
 				return result;
 			}
@@ -895,6 +908,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenVertexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int vertexCount,
 			int vertexStride
 		) {
@@ -903,6 +917,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				result = GLDevice.GenVertexBuffer(
 					dynamic,
+					usage,
 					vertexCount,
 					vertexStride
 				);
@@ -959,6 +974,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenIndexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int indexCount,
 			IndexElementSize indexElementSize
 		) {
@@ -967,6 +983,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				result = GLDevice.GenIndexBuffer(
 					dynamic,
+					usage,
 					indexCount,
 					indexElementSize
 				);

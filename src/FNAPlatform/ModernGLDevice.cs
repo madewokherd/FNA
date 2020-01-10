@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -114,7 +114,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region OpenGL Buffer Container Class
 
-		private class OpenGLBuffer : IGLBuffer
+		private class ModernGLBuffer : IGLBuffer
 		{
 			public uint Handle
 			{
@@ -128,27 +128,38 @@ namespace Microsoft.Xna.Framework.Graphics
 				private set;
 			}
 
-			public GLenum Dynamic
+			public GLenum Flags
 			{
 				get;
 				private set;
 			}
 
-			public OpenGLBuffer(
+			public IntPtr Pin;
+
+			public ModernGLBuffer(
 				uint handle,
 				IntPtr bufferSize,
-				GLenum dynamic
+				BufferUsage usage
 			) {
 				Handle = handle;
 				BufferSize = bufferSize;
-				Dynamic = dynamic;
+				Flags = (
+					GLenum.GL_MAP_PERSISTENT_BIT |
+					GLenum.GL_MAP_COHERENT_BIT |
+					GLenum.GL_MAP_WRITE_BIT
+				);
+				if (usage == BufferUsage.None)
+				{
+					Flags |= GLenum.GL_MAP_READ_BIT;
+				}
 			}
 
-			private OpenGLBuffer()
+			private ModernGLBuffer(uint handle)
 			{
-				Handle = 0;
+				Handle = handle;
 			}
-			public static readonly OpenGLBuffer NullBuffer = new OpenGLBuffer();
+			public static readonly ModernGLBuffer NullBuffer = new ModernGLBuffer(0);
+			public static readonly ModernGLBuffer ForceUpdate = new ModernGLBuffer(uint.MaxValue);
 		}
 
 		#endregion
@@ -459,6 +470,14 @@ namespace Microsoft.Xna.Framework.Graphics
 			private set;
 		}
 
+		public bool SupportsNoOverwrite
+		{
+			get
+			{
+				return true;
+			}
+		}
+
 		public int MaxTextureSlots
 		{
 			get;
@@ -477,14 +496,14 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private class VertexAttribute
 		{
-			public uint CurrentBuffer;
+			public ModernGLBuffer CurrentBuffer;
 			public IntPtr CurrentPointer;
 			public VertexElementFormat CurrentFormat;
 			public bool CurrentNormalized;
 			public int CurrentStride;
 			public VertexAttribute()
 			{
-				CurrentBuffer = 0;
+				CurrentBuffer = ModernGLBuffer.NullBuffer;
 				CurrentPointer = IntPtr.Zero;
 				CurrentFormat = VertexElementFormat.Single;
 				CurrentNormalized = false;
@@ -622,6 +641,12 @@ namespace Microsoft.Xna.Framework.Graphics
 					null,
 					IntPtr.Zero
 				);
+
+				/* SPIR-V is very new and not really necessary. */
+				if (shaderProfile == "glspirv" && !useCoreProfile)
+				{
+					shaderProfile = "glsl120";
+				}
 			}
 			shaderContext = MojoShader.MOJOSHADER_glCreateContext(
 				shaderProfile,
@@ -1213,7 +1238,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			int primitiveCount
 		) {
 			// Unbind current index buffer.
-			BindIndexBuffer(OpenGLBuffer.NullBuffer);
+			BindIndexBuffer(ModernGLBuffer.NullBuffer);
 
 			// Draw!
 			glDrawRangeElements(
@@ -2011,7 +2036,7 @@ namespace Microsoft.Xna.Framework.Graphics
 						}
 						attributeEnabled[attribLoc] = true;
 						VertexAttribute attr = attributes[attribLoc];
-						uint buffer = (bindings[i].VertexBuffer.buffer as OpenGLBuffer).Handle;
+						ModernGLBuffer buffer = bindings[i].VertexBuffer.buffer as ModernGLBuffer;
 						IntPtr ptr = basePtr + element.Offset;
 						VertexElementFormat format = element.VertexElementFormat;
 						bool normalized = XNAToGL.VertexAttribNormalized(element);
@@ -2064,7 +2089,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			IntPtr ptr,
 			int vertexOffset
 		) {
-			BindVertexBuffer(OpenGLBuffer.NullBuffer);
+			BindVertexBuffer(ModernGLBuffer.NullBuffer);
 			IntPtr basePtr = ptr + (vertexDeclaration.VertexStride * vertexOffset);
 
 			if (	vertexDeclaration != ldVertexDeclaration ||
@@ -2116,7 +2141,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					VertexAttribute attr = attributes[attribLoc];
 					IntPtr finalPtr = basePtr + element.Offset;
 					bool normalized = XNAToGL.VertexAttribNormalized(element);
-					if (	attr.CurrentBuffer != 0 ||
+					if (	attr.CurrentBuffer != ModernGLBuffer.NullBuffer ||
 						attr.CurrentPointer != finalPtr ||
 						attr.CurrentFormat != element.VertexElementFormat ||
 						attr.CurrentNormalized != normalized ||
@@ -2130,7 +2155,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							vertexDeclaration.VertexStride,
 							finalPtr
 						);
-						attr.CurrentBuffer = 0;
+						attr.CurrentBuffer = ModernGLBuffer.NullBuffer;
 						attr.CurrentPointer = finalPtr;
 						attr.CurrentFormat = element.VertexElementFormat;
 						attr.CurrentNormalized = normalized;
@@ -2190,10 +2215,11 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenVertexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int vertexCount,
 			int vertexStride
 		) {
-			OpenGLBuffer result = null;
+			ModernGLBuffer result = null;
 
 #if !DISABLE_THREADING
 			ForceToMainThread(() => {
@@ -2202,19 +2228,37 @@ namespace Microsoft.Xna.Framework.Graphics
 			uint handle;
 			glCreateBuffers(1, out handle);
 
-			result = new OpenGLBuffer(
+			result = new ModernGLBuffer(
 				handle,
 				(IntPtr) (vertexStride * vertexCount),
-				dynamic ? GLenum.GL_STREAM_DRAW : GLenum.GL_STATIC_DRAW
+				usage
 			);
 
-			glNamedBufferData(
-				handle,
-				result.BufferSize,
-				IntPtr.Zero,
-				result.Dynamic
-			);
+			if (dynamic)
+			{
+				glNamedBufferStorage(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					result.Flags | GLenum.GL_DYNAMIC_STORAGE_BIT
+				);
 
+				result.Pin = glMapNamedBufferRange(
+					handle,
+					IntPtr.Zero,
+					result.BufferSize,
+					result.Flags
+				);
+			}
+			else
+			{
+				glNamedBufferData(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					GLenum.GL_STATIC_DRAW
+				);
+			}
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2224,10 +2268,11 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenIndexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int indexCount,
 			IndexElementSize indexElementSize
 		) {
-			OpenGLBuffer result = null;
+			ModernGLBuffer result = null;
 
 #if !DISABLE_THREADING
 			ForceToMainThread(() => {
@@ -2236,19 +2281,37 @@ namespace Microsoft.Xna.Framework.Graphics
 			uint handle;
 			glCreateBuffers(1, out handle);
 
-			result = new OpenGLBuffer(
+			result = new ModernGLBuffer(
 				handle,
 				(IntPtr) (indexCount * XNAToGL.IndexSize[(int) indexElementSize]),
-				dynamic ? GLenum.GL_STREAM_DRAW : GLenum.GL_STATIC_DRAW
+				usage
 			);
 
-			glNamedBufferData(
-				handle,
-				result.BufferSize,
-				IntPtr.Zero,
-				result.Dynamic
-			);
+			if (dynamic)
+			{
+				glNamedBufferStorage(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					result.Flags | GLenum.GL_DYNAMIC_STORAGE_BIT
+				);
 
+				result.Pin = glMapNamedBufferRange(
+					handle,
+					IntPtr.Zero,
+					result.BufferSize,
+					result.Flags
+				);
+			}
+			else
+			{
+				glNamedBufferData(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					GLenum.GL_STATIC_DRAW
+				);
+			}
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2262,7 +2325,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void BindVertexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle != currentVertexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ARRAY_BUFFER, handle);
@@ -2272,7 +2335,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void BindIndexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle != currentIndexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ELEMENT_ARRAY_BUFFER, handle);
@@ -2291,31 +2354,54 @@ namespace Microsoft.Xna.Framework.Graphics
 			int dataLength,
 			SetDataOptions options
 		) {
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+
+			if (options == SetDataOptions.None)
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-			uint handle = (buffer as OpenGLBuffer).Handle;
+				/* For static buffers this is the only path,
+				 * and it should be "fast" enough over there.
+				 * If you are hitting this with a dynamic buffer
+				 * you are using dynamic buffers incorrectly.
+				 * -flibit
+				 */
+				glNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) dataLength,
+					data
+				);
+#if !DISABLE_THREADING
+				});
+#endif
+				return;
+			}
 
 			if (options == SetDataOptions.Discard)
 			{
-				glNamedBufferData(
-					handle,
-					buffer.BufferSize,
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				glUnmapNamedBuffer(buf.Handle);
+				glInvalidateBufferData(buf.Handle);
+				buf.Pin = glMapNamedBufferRange(
+					buf.Handle,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					buf.BufferSize,
+					buf.Flags
 				);
+#if !DISABLE_THREADING
+				});
+#endif
 			}
 
-			glNamedBufferSubData(
-				handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) dataLength,
-				data
+			memcpy(
+				buf.Pin + offsetInBytes,
+				data,
+				(IntPtr) dataLength
 			);
-
-#if !DISABLE_THREADING
-			});
-#endif
 		}
 
 		public void SetIndexBufferData(
@@ -2325,32 +2411,54 @@ namespace Microsoft.Xna.Framework.Graphics
 			int dataLength,
 			SetDataOptions options
 		) {
-#if !DISABLE_THREADING
-			ForceToMainThread(() => {
-#endif
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
 
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			if (options == SetDataOptions.None)
+			{
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				/* For static buffers this is the only path,
+				 * and it should be "fast" enough over there.
+				 * If you are hitting this with a dynamic buffer
+				 * you are using dynamic buffers incorrectly.
+				 * -flibit
+				 */
+				glNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) dataLength,
+					data
+				);
+#if !DISABLE_THREADING
+				});
+#endif
+				return;
+			}
 
 			if (options == SetDataOptions.Discard)
 			{
-				glNamedBufferData(
-					handle,
-					buffer.BufferSize,
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				glUnmapNamedBuffer(buf.Handle);
+				glInvalidateBufferData(buf.Handle);
+				buf.Pin = glMapNamedBufferRange(
+					buf.Handle,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					buf.BufferSize,
+					buf.Flags
 				);
+#if !DISABLE_THREADING
+				});
+#endif
 			}
 
-			glNamedBufferSubData(
-				handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) dataLength,
-				data
+			memcpy(
+				buf.Pin + offsetInBytes,
+				data,
+				(IntPtr) dataLength
 			);
-
-#if !DISABLE_THREADING
-			});
-#endif
 		}
 
 		#endregion
@@ -2377,20 +2485,33 @@ namespace Microsoft.Xna.Framework.Graphics
 				cpy = data + (startIndex * elementSizeInBytes);
 			}
 
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			if (buf.Pin != IntPtr.Zero)
+			{
+				/* Buffers can't get written to by anyone other than the
+				 * application, so we can just memcpy here... right?
+				 */
+				memcpy(
+					cpy,
+					buf.Pin + offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes)
+				);
+			}
+			else
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-				
-			glGetNamedBufferSubData(
-				(buffer as OpenGLBuffer).Handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) (elementCount * vertexStride),
-				cpy
-			);
-
+				glGetNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) (elementCount * vertexStride),
+					cpy
+				);
 #if !DISABLE_THREADING
-			});
+				});
 #endif
+			}
 
 			if (useStagingBuffer)
 			{
@@ -2414,20 +2535,33 @@ namespace Microsoft.Xna.Framework.Graphics
 			int elementCount,
 			int elementSizeInBytes
 		) {
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			if (buf.Pin != IntPtr.Zero)
+			{
+				/* Buffers can't get written to by anyone other than the
+				 * application, so we can just memcpy here... right?
+				 */
+				memcpy(
+					data + (startIndex * elementSizeInBytes),
+					(buffer as ModernGLBuffer).Pin + offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes)
+				);
+			}
+			else
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-
-			glGetNamedBufferSubData(
-				(buffer as OpenGLBuffer).Handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) (elementCount * elementSizeInBytes),
-				data + (startIndex * elementSizeInBytes)
-			);
-
+				glGetNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes),
+					data + (startIndex * elementSizeInBytes)
+				);
 #if !DISABLE_THREADING
-			});
+				});
 #endif
+			}
 		}
 
 		#endregion
@@ -2436,7 +2570,8 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void DeleteVertexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			uint handle = buf.Handle;
 			if (handle == currentVertexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ARRAY_BUFFER, 0);
@@ -2444,10 +2579,10 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 			for (int i = 0; i < attributes.Length; i += 1)
 			{
-				if (handle == attributes[i].CurrentBuffer)
+				if (buf == attributes[i].CurrentBuffer)
 				{
 					// Force the next vertex attrib update!
-					attributes[i].CurrentBuffer = uint.MaxValue;
+					attributes[i].CurrentBuffer = ModernGLBuffer.ForceUpdate;
 				}
 			}
 			glDeleteBuffers(1, ref handle);
@@ -2455,7 +2590,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void DeleteIndexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle == currentIndexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -3996,18 +4131,18 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			public static readonly int[] VertexAttribSize = new int[]
 			{
-					1,	// VertexElementFormat.Single
-					2,	// VertexElementFormat.Vector2
-					3,	// VertexElementFormat.Vector3
-					4,	// VertexElementFormat.Vector4
-					4,	// VertexElementFormat.Color
-					4,	// VertexElementFormat.Byte4
-					2,	// VertexElementFormat.Short2
-					4,	// VertexElementFormat.Short4
-					2,	// VertexElementFormat.NormalizedShort2
-					4,	// VertexElementFormat.NormalizedShort4
-					2,	// VertexElementFormat.HalfVector2
-					4	// VertexElementFormat.HalfVector4
+				1,	// VertexElementFormat.Single
+				2,	// VertexElementFormat.Vector2
+				3,	// VertexElementFormat.Vector3
+				4,	// VertexElementFormat.Vector4
+				4,	// VertexElementFormat.Color
+				4,	// VertexElementFormat.Byte4
+				2,	// VertexElementFormat.Short2
+				4,	// VertexElementFormat.Short4
+				2,	// VertexElementFormat.NormalizedShort2
+				4,	// VertexElementFormat.NormalizedShort4
+				2,	// VertexElementFormat.HalfVector2
+				4	// VertexElementFormat.HalfVector4
 			};
 
 			public static readonly GLenum[] VertexAttribType = new GLenum[]
