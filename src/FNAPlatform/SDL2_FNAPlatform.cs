@@ -306,7 +306,38 @@ namespace Microsoft.Xna.Framework
 
 		private static bool PrepareMTLAttributes()
 		{
-			// Coming soon to an FNA near you!
+			if (	String.IsNullOrEmpty(ForcedGLDevice) ||
+				!ForcedGLDevice.Equals(METAL)		)
+			{
+				return false;
+			}
+
+			if (OSVersion.Equals("Mac OS X"))
+			{
+				// Let's find out if the OS supports Metal...
+				try
+				{
+					if (MetalDevice.MTLCreateSystemDefaultDevice() != IntPtr.Zero)
+					{
+						// We're good to go!
+						return true;
+					}
+				}
+				catch
+				{
+					// The OS is too old for Metal!
+					return false;
+				}
+			}
+			else if (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS"))
+			{
+				/* We only support iOS/tvOS 11.0+ so
+				 * Metal is guaranteed to be supported.
+				 */
+				return true;
+			}
+
+			// Oh well, to OpenGL we go!
 			return false;
 		}
 
@@ -462,7 +493,12 @@ namespace Microsoft.Xna.Framework
 			}
 			else if (metal = PrepareMTLAttributes())
 			{
-				// FIXME: SDL_WINDOW_METAL?
+				if (MetalDevice.UsingSDL2_0_11())
+				{
+					SDL.SDL_SetHint(MetalDevice.SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
+				}
+
+				// Metal doesn't require a window flag
 				ActualGLDevice = METAL;
 			}
 			else if (opengl = PrepareGLAttributes())
@@ -516,14 +552,33 @@ namespace Microsoft.Xna.Framework
 			// We hide the mouse cursor by default.
 			OnIsMouseVisibleChanged(false);
 
-			/* iOS and tvOS require an active GL context
-			 * to get the drawable size of the screen.
-			 * -caleb
+			/* When using OpenGL, iOS and tvOS require
+			 * an active GL context to get the drawable
+			 * size of the screen.
+			 *
+			 * When using Metal, all Apple platforms
+			 * require a view to get the drawable size.
 			 */
 			IntPtr tempContext = IntPtr.Zero;
 			if (opengl && (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS")))
 			{
 				tempContext = SDL.SDL_GL_CreateContext(window);
+			}
+			else if (metal)
+			{
+				if (MetalDevice.UsingSDL2_0_11())
+				{
+					tempContext = MetalDevice.SDL_Metal_CreateView(window);
+				}
+				else
+				{
+					SDL.SDL_SetHint(SDL.SDL_HINT_RENDER_DRIVER, "metal");
+					tempContext = SDL.SDL_CreateRenderer(
+						window,
+						-1,
+						SDL.SDL_RendererFlags.SDL_RENDERER_ACCELERATED
+					);
+				}
 			}
 
 			/* If high DPI is not found, unset the HIGHDPI var.
@@ -537,8 +592,15 @@ namespace Microsoft.Xna.Framework
 			}
 			else if (metal)
 			{
-				// FIXME: This will be fixed when MetalDevice gets here.
-				drawX = drawY = 0;
+				if (MetalDevice.UsingSDL2_0_11())
+				{
+					MetalDevice.GetDrawableSizeFromView(tempContext, out drawX, out drawY);
+				}
+				else
+				{
+					IntPtr layer = SDL.SDL_RenderGetMetalLayer(tempContext);
+					MetalDevice.GetDrawableSize(layer, out drawX, out drawY);
+				}
 			}
 			else if (opengl)
 			{
@@ -563,7 +625,21 @@ namespace Microsoft.Xna.Framework
 			// We're done with that temporary context.
 			if (tempContext != IntPtr.Zero)
 			{
-				SDL.SDL_GL_DeleteContext(tempContext);
+				if (opengl)
+				{
+					SDL.SDL_GL_DeleteContext(tempContext);
+				}
+				else if (metal)
+				{
+					if (MetalDevice.UsingSDL2_0_11())
+					{
+						MetalDevice.SDL_Metal_DestroyView(tempContext);
+					}
+					else
+					{
+						SDL.SDL_DestroyRenderer(tempContext);
+					}
+				}
 			}
 
 			return new FNAWindow(
@@ -1333,7 +1409,8 @@ namespace Microsoft.Xna.Framework
 			switch (ActualGLDevice)
 			{
 			case VULKAN:	break; // Maybe some day!
-			case METAL:	break; // Coming soon!
+			case METAL:
+				return new MetalDevice(presentationParameters, adapter);
 			case MODERNGL:
 				// FIXME: This is still experimental! -flibit
 				return new ModernGLDevice(presentationParameters, adapter);
@@ -1489,6 +1566,7 @@ namespace Microsoft.Xna.Framework
 		{
 			if (Environment.GetEnvironmentVariable("FNA_SDL2_FORCE_BASE_PATH") != "1")
 			{
+				// If your platform uses a CLR, you want to be in this list!
 				if (	OSVersion.Equals("Windows") ||
 					OSVersion.Equals("Mac OS X") ||
 					OSVersion.Equals("Linux") ||
@@ -1496,15 +1574,6 @@ namespace Microsoft.Xna.Framework
 					OSVersion.Equals("OpenBSD") ||
 					OSVersion.Equals("NetBSD")	)
 				{
-					/* This is mostly here for legacy compatibility.
-					 * For most platforms this should be the same as
-					 * SDL_GetBasePath, but some platforms (Apple's)
-					 * will have a separate Resources folder that is
-					 * the "base" directory for applications.
-					 *
-					 * TODO: Remove this and endure the breakage.
-					 * -flibit
-					 */
 					return AppDomain.CurrentDomain.BaseDirectory;
 				}
 			}
@@ -1703,14 +1772,11 @@ namespace Microsoft.Xna.Framework
 
 		#region Image I/O Methods
 
-		public static void TextureDataFromStream(
+		private static IntPtr TextureDataFromStreamInternal(
 			Stream stream,
-			out int width,
-			out int height,
-			out byte[] pixels,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
+			int reqWidth,
+			int reqHeight,
+			bool zoom
 		) {
 			// Load the SDL_Surface* from RWops, get the image data
 			IntPtr surface = SDL_image.IMG_Load_RW(
@@ -1724,10 +1790,7 @@ namespace Microsoft.Xna.Framework
 					"TextureDataFromStream: " +
 					SDL.SDL_GetError()
 				);
-				width = 0;
-				height = 0;
-				pixels = null;
-				return;
+				return IntPtr.Zero;
 			}
 			surface = INTERNAL_convertSurfaceFormat(surface);
 
@@ -1830,6 +1893,52 @@ namespace Microsoft.Xna.Framework
 				surface = newSurface;
 			}
 
+			return surface;
+		}
+
+		private static unsafe void TextureDataClearAlpha(
+			byte* pixels,
+			int len
+		) {
+			/* Ensure that the alpha pixels are... well, actual alpha.
+			 * You think this looks stupid, but be assured: Your paint program is
+			 * almost certainly even stupider.
+			 * -flibit
+			 */
+			for (int i = 0; i < len; i += 4, pixels += 4)
+			{
+				if (pixels[3] == 0)
+				{
+					pixels[0] = 0;
+					pixels[1] = 0;
+					pixels[2] = 0;
+				}
+			}
+		}
+
+		public static void TextureDataFromStream(
+			Stream stream,
+			out int width,
+			out int height,
+			out byte[] pixels,
+			int reqWidth = -1,
+			int reqHeight = -1,
+			bool zoom = false
+		) {
+			IntPtr surface = TextureDataFromStreamInternal(
+				stream,
+				reqWidth,
+				reqHeight,
+				zoom
+			);
+			if (surface == IntPtr.Zero)
+			{
+				width = 0;
+				height = 0;
+				pixels = null;
+				return;
+			}
+
 			// Copy surface data to output managed byte array
 			unsafe
 			{
@@ -1837,24 +1946,54 @@ namespace Microsoft.Xna.Framework
 				width = surPtr->w;
 				height = surPtr->h;
 				pixels = new byte[width * height * 4]; // MUST be SurfaceFormat.Color!
-				Marshal.Copy(surPtr->pixels, pixels, 0, pixels.Length);
-			}
-			SDL.SDL_FreeSurface(surface);
 
-			/* Ensure that the alpha pixels are... well, actual alpha.
-			 * You think this looks stupid, but be assured: Your paint program is
-			 * almost certainly even stupider.
-			 * -flibit
-			 */
-			for (int i = 0; i < pixels.Length; i += 4)
-			{
-				if (pixels[i + 3] == 0)
+				Marshal.Copy(surPtr->pixels, pixels, 0, pixels.Length);
+				fixed (byte* pixPtr = &pixels[0])
 				{
-					pixels[i] = 0;
-					pixels[i + 1] = 0;
-					pixels[i + 2] = 0;
+					TextureDataClearAlpha(pixPtr, pixels.Length);
 				}
 			}
+			SDL.SDL_FreeSurface(surface);
+		}
+
+		public static void TextureDataFromStreamPtr(
+			Stream stream,
+			out int width,
+			out int height,
+			out IntPtr pixels,
+			out int len,
+			int reqWidth = -1,
+			int reqHeight = -1,
+			bool zoom = false
+		) {
+			IntPtr surface = TextureDataFromStreamInternal(
+				stream,
+				reqWidth,
+				reqHeight,
+				zoom
+			);
+			if (surface == IntPtr.Zero)
+			{
+				width = 0;
+				height = 0;
+				pixels = IntPtr.Zero;
+				len = 0;
+				return;
+			}
+
+			// Copy surface data to output managed byte array
+			unsafe
+			{
+				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
+				width = surPtr->w;
+				height = surPtr->h;
+				len = width * height * 4;
+				pixels = Marshal.AllocHGlobal(len); // MUST be SurfaceFormat.Color!
+
+				SDL.SDL_memcpy(pixels, surPtr->pixels, (IntPtr) len);
+				TextureDataClearAlpha((byte*) pixels, len);
+			}
+			SDL.SDL_FreeSurface(surface);
 		}
 
 		public static void SavePNG(

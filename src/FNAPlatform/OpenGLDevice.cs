@@ -398,7 +398,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		private uint ldPass = 0;
 
 		// Some vertex declarations may have overlapping attributes :/
-		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 10];
+		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 16];
 
 		#endregion
 
@@ -575,27 +575,6 @@ namespace Microsoft.Xna.Framework.Graphics
 		 * -flibit
 		 */
 		private bool BUG_HACK_NOTANGLE;
-
-		#endregion
-
-		#region memcpy Export
-
-		/* This is used a lot for GetData/Read calls... -flibit */
-#if NETSTANDARD2_0
-		private static unsafe void memcpy(IntPtr dst, IntPtr src, IntPtr len)
-		{
-			long size = len.ToInt64();
-			Buffer.MemoryCopy(
-				(void*) src,
-				(void*) dst,
-				size,
-				size
-			);
-		}
-#else
-		[DllImport("msvcrt", CallingConvention = CallingConvention.Cdecl)]
-		private static extern void memcpy(IntPtr dst, IntPtr src, IntPtr len);
-#endif
 
 		#endregion
 
@@ -963,6 +942,15 @@ namespace Microsoft.Xna.Framework.Graphics
 					);
 				}
 			}
+		}
+
+		#endregion
+
+		#region BeginFrame Method
+
+		public void BeginFrame()
+		{
+			// Do nothing.
 		}
 
 		#endregion
@@ -2179,7 +2167,7 @@ namespace Microsoft.Xna.Framework.Graphics
 						if (attrUse[usage, index])
 						{
 							index = -1;
-							for (int j = 0; j < 10; j += 1)
+							for (int j = 0; j < 16; j += 1)
 							{
 								if (!attrUse[usage, j])
 								{
@@ -2283,7 +2271,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					if (attrUse[usage, index])
 					{
 						index = -1;
-						for (int j = 0; j < 10; j += 1)
+						for (int j = 0; j < 16; j += 1)
 						{
 							if (!attrUse[usage, j])
 							{
@@ -2600,7 +2588,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				IntPtr dst = data + (startIndex * elementSizeInBytes);
 				for (int i = 0; i < elementCount; i += 1)
 				{
-					memcpy(dst, src, (IntPtr) elementSizeInBytes);
+					SDL.SDL_memcpy(dst, src, (IntPtr) elementSizeInBytes);
 					dst += elementSizeInBytes;
 					src += vertexStride;
 				}
@@ -3191,7 +3179,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							return;
 						}
 						// FIXME: Can we copy via pitch instead, or something? -flibit
-						memcpy(
+						SDL.SDL_memcpy(
 							data + ((curPixel - startIndex) * elementSizeInBytes),
 							texData + (((row * width) + col) * elementSizeInBytes),
 							(IntPtr) elementSizeInBytes
@@ -3290,7 +3278,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							return;
 						}
 						// FIXME: Can we copy via pitch instead, or something? -flibit
-						memcpy(
+						SDL.SDL_memcpy(
 							data + ((curPixel - startIndex) * elementSizeInBytes),
 							texData + (((row * size) + col) * elementSizeInBytes),
 							(IntPtr) elementSizeInBytes
@@ -3448,9 +3436,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			for (int row = 0; row < subH / 2; row += 1)
 			{
 				// Top to temp, bottom to top, temp to bottom
-				memcpy(temp, data + (row * pitch), (IntPtr) pitch);
-				memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
-				memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
+				SDL.SDL_memcpy(temp, data + (row * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
 			}
 			Marshal.FreeHGlobal(temp);
 		}

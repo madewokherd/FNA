@@ -402,7 +402,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		private uint ldPass = 0;
 
 		// Some vertex declarations may have overlapping attributes :/
-		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 10];
+		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 16];
 
 		#endregion
 
@@ -555,27 +555,6 @@ namespace Microsoft.Xna.Framework.Graphics
 		private bool useCoreProfile;
 		private DepthFormat windowDepthFormat;
 		private uint vao;
-
-		#endregion
-
-		#region memcpy Export
-
-		/* This is used a lot for GetData/Read calls... -flibit */
-#if NETSTANDARD2_0
-		private static unsafe void memcpy(IntPtr dst, IntPtr src, IntPtr len)
-		{
-			long size = len.ToInt64();
-			Buffer.MemoryCopy(
-				(void*) src,
-				(void*) dst,
-				size,
-				size
-			);
-		}
-#else
-		[DllImport("msvcrt", CallingConvention = CallingConvention.Cdecl)]
-		private static extern void memcpy(IntPtr dst, IntPtr src, IntPtr len);
-#endif
 
 		#endregion
 
@@ -901,6 +880,15 @@ namespace Microsoft.Xna.Framework.Graphics
 					);
 				}
 			}
+		}
+
+		#endregion
+
+		#region BeginFrame Method
+
+		public void BeginFrame()
+		{
+			// Do nothing.
 		}
 
 		#endregion
@@ -2011,7 +1999,7 @@ namespace Microsoft.Xna.Framework.Graphics
 						if (attrUse[usage, index])
 						{
 							index = -1;
-							for (int j = 0; j < 10; j += 1)
+							for (int j = 0; j < 16; j += 1)
 							{
 								if (!attrUse[usage, j])
 								{
@@ -2114,7 +2102,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					if (attrUse[usage, index])
 					{
 						index = -1;
-						for (int j = 0; j < 10; j += 1)
+						for (int j = 0; j < 16; j += 1)
 						{
 							if (!attrUse[usage, j])
 							{
@@ -2397,7 +2385,7 @@ namespace Microsoft.Xna.Framework.Graphics
 #endif
 			}
 
-			memcpy(
+			SDL.SDL_memcpy(
 				buf.Pin + offsetInBytes,
 				data,
 				(IntPtr) dataLength
@@ -2454,7 +2442,7 @@ namespace Microsoft.Xna.Framework.Graphics
 #endif
 			}
 
-			memcpy(
+			SDL.SDL_memcpy(
 				buf.Pin + offsetInBytes,
 				data,
 				(IntPtr) dataLength
@@ -2491,7 +2479,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				/* Buffers can't get written to by anyone other than the
 				 * application, so we can just memcpy here... right?
 				 */
-				memcpy(
+				SDL.SDL_memcpy(
 					cpy,
 					buf.Pin + offsetInBytes,
 					(IntPtr) (elementCount * elementSizeInBytes)
@@ -2519,7 +2507,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				IntPtr dst = data + (startIndex * elementSizeInBytes);
 				for (int i = 0; i < elementCount; i += 1)
 				{
-					memcpy(dst, src, (IntPtr) elementSizeInBytes);
+					SDL.SDL_memcpy(dst, src, (IntPtr) elementSizeInBytes);
 					dst += elementSizeInBytes;
 					src += vertexStride;
 				}
@@ -2541,7 +2529,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				/* Buffers can't get written to by anyone other than the
 				 * application, so we can just memcpy here... right?
 				 */
-				memcpy(
+				SDL.SDL_memcpy(
 					data + (startIndex * elementSizeInBytes),
 					(buffer as ModernGLBuffer).Pin + offsetInBytes,
 					(IntPtr) (elementCount * elementSizeInBytes)
@@ -3233,9 +3221,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			for (int row = 0; row < subH / 2; row += 1)
 			{
 				// Top to temp, bottom to top, temp to bottom
-				memcpy(temp, data + (row * pitch), (IntPtr) pitch);
-				memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
-				memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
+				SDL.SDL_memcpy(temp, data + (row * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
 			}
 			Marshal.FreeHGlobal(temp);
 		}
@@ -3712,13 +3700,25 @@ namespace Microsoft.Xna.Framework.Graphics
 						else if (	attachmentTypes[i] == GLenum.GL_RENDERBUFFER &&
 								currentAttachmentTypes[i] != GLenum.GL_RENDERBUFFER	)
 						{
-							// FIXME: Do we use layer for unbinding cubes? -flibit
-							glNamedFramebufferTexture(
-								targetFramebuffer,
-								GLenum.GL_COLOR_ATTACHMENT0 + i,
-								0,
-								0
-							);
+							if (currentAttachmentTypes[i] == GLenum.GL_TEXTURE_2D)
+							{
+								glNamedFramebufferTexture(
+									targetFramebuffer,
+									GLenum.GL_COLOR_ATTACHMENT0 + i,
+									0,
+									0
+								);
+							}
+							else
+							{
+								glNamedFramebufferTextureLayer(
+									targetFramebuffer,
+									GLenum.GL_COLOR_ATTACHMENT0 + i,
+									0,
+									0,
+									(int) currentAttachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
+								);
+							}
 						}
 					}
 					if (attachmentTypes[i] == GLenum.GL_RENDERBUFFER)
@@ -3730,13 +3730,23 @@ namespace Microsoft.Xna.Framework.Graphics
 							attachments[i]
 						);
 					}
-					else
+					else if (attachmentTypes[i] == GLenum.GL_TEXTURE_2D)
 					{
 						glNamedFramebufferTexture(
 							targetFramebuffer,
 							GLenum.GL_COLOR_ATTACHMENT0 + i,
 							attachments[i],
 							0
+						);
+					}
+					else
+					{
+						glNamedFramebufferTextureLayer(
+							targetFramebuffer,
+							GLenum.GL_COLOR_ATTACHMENT0 + i,
+							attachments[i],
+							0,
+							(int) attachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
 						);
 					}
 					currentAttachments[i] = attachments[i];
@@ -3768,14 +3778,23 @@ namespace Microsoft.Xna.Framework.Graphics
 							0
 						);
 					}
-					else
+					else if (currentAttachmentTypes[i] == GLenum.GL_TEXTURE_2D)
 					{
-						// FIXME: Do we use layer for unbinding cubes? -flibit
 						glNamedFramebufferTexture(
 							targetFramebuffer,
 							GLenum.GL_COLOR_ATTACHMENT0 + i,
 							0,
 							0
+						);
+					}
+					else
+					{
+						glNamedFramebufferTextureLayer(
+							targetFramebuffer,
+							GLenum.GL_COLOR_ATTACHMENT0 + i,
+							0,
+							0,
+							(int) currentAttachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
 						);
 					}
 					currentAttachments[i] = 0;

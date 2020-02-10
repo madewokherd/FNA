@@ -30,15 +30,6 @@ namespace Microsoft.Xna.Framework
 		{
 			get
 			{
-				/* FIXME: If you call this before Game.Initialize(), you can
-				 * actually get a device in XNA4. But, even in XNA4, Game.Run
-				 * is what calls CreateDevice! So is this check accurate?
-				 * -flibit
-				 */
-				if (graphicsDevice == null)
-				{
-					((IGraphicsDeviceManager) this).CreateDevice();
-				}
 				return graphicsDevice;
 			}
 		}
@@ -274,9 +265,13 @@ namespace Microsoft.Xna.Framework
 
 		public void ApplyChanges()
 		{
-			// Calling ApplyChanges() before CreateDevice() should have no effect.
+			/* Calling ApplyChanges() before CreateDevice() forces CreateDevice.
+			 * We can then return early since CreateDevice will call this again!
+			 * -flibit
+			 */
 			if (graphicsDevice == null)
 			{
+				(this as IGraphicsDeviceManager).CreateDevice();
 				return;
 			}
 
@@ -288,9 +283,9 @@ namespace Microsoft.Xna.Framework
 
 			// Recreate device information before resetting
 			GraphicsDeviceInformation gdi = new GraphicsDeviceInformation();
-			gdi.Adapter = GraphicsDevice.Adapter;
-			gdi.GraphicsProfile = GraphicsDevice.GraphicsProfile;
-			gdi.PresentationParameters = GraphicsDevice.PresentationParameters.Clone();
+			gdi.Adapter = graphicsDevice.Adapter;
+			gdi.GraphicsProfile = graphicsDevice.GraphicsProfile;
+			gdi.PresentationParameters = graphicsDevice.PresentationParameters.Clone();
 
 			bool supportsOrientations = FNAPlatform.SupportsOrientationChanges();
 
@@ -357,7 +352,7 @@ namespace Microsoft.Xna.Framework
 				 * -flibit
 				 */
 				gdi.PresentationParameters.MultiSampleCount = Math.Min(
-					GraphicsDevice.GLDevice.MaxMultiSampleCount,
+					graphicsDevice.GLDevice.MaxMultiSampleCount,
 					8
 				);
 			}
@@ -384,7 +379,7 @@ namespace Microsoft.Xna.Framework
 				gdi.PresentationParameters.BackBufferHeight
 			);
 			// FIXME: This should be before EndScreenDeviceChange! -flibit
-			GraphicsDevice.Reset(
+			graphicsDevice.Reset(
 				gdi.PresentationParameters,
 				gdi.Adapter
 			);
@@ -529,6 +524,7 @@ namespace Microsoft.Xna.Framework
 				return false;
 			}
 
+			graphicsDevice.GLDevice.BeginFrame();
 			drawBegun = true;
 			return true;
 		}
