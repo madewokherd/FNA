@@ -259,6 +259,16 @@ namespace Microsoft.Xna.Framework
 				);
 			}
 
+			// By default, assume physical layout, since XNA games probably assume XInput
+			hint = SDL.SDL_GetHint(SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS);
+			if (String.IsNullOrEmpty(hint))
+			{
+				SDL.SDL_SetHint(
+					SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS,
+					"0"
+				);
+			}
+
 			SDL.SDL_SetHint(
 				SDL.SDL_HINT_ORIENTATIONS,
 				"LandscapeLeft LandscapeRight Portrait"
@@ -501,10 +511,7 @@ namespace Microsoft.Xna.Framework
 			}
 			else if (metal = PrepareMTLAttributes())
 			{
-				if (MetalDevice.UsingSDL2_0_11())
-				{
-					SDL.SDL_SetHint(MetalDevice.SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
-				}
+				SDL.SDL_SetHint(SDL.SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
 
 				// Metal doesn't require a window flag
 				ActualGLDevice = METAL;
@@ -574,19 +581,7 @@ namespace Microsoft.Xna.Framework
 			}
 			else if (metal)
 			{
-				if (MetalDevice.UsingSDL2_0_11())
-				{
-					tempContext = MetalDevice.SDL_Metal_CreateView(window);
-				}
-				else
-				{
-					SDL.SDL_SetHint(SDL.SDL_HINT_RENDER_DRIVER, "metal");
-					tempContext = SDL.SDL_CreateRenderer(
-						window,
-						-1,
-						SDL.SDL_RendererFlags.SDL_RENDERER_ACCELERATED
-					);
-				}
+				tempContext = SDL.SDL_Metal_CreateView(window);
 			}
 
 			/* If high DPI is not found, unset the HIGHDPI var.
@@ -600,15 +595,7 @@ namespace Microsoft.Xna.Framework
 			}
 			else if (metal)
 			{
-				if (MetalDevice.UsingSDL2_0_11())
-				{
-					MetalDevice.GetDrawableSizeFromView(tempContext, out drawX, out drawY);
-				}
-				else
-				{
-					IntPtr layer = SDL.SDL_RenderGetMetalLayer(tempContext);
-					MetalDevice.GetDrawableSize(layer, out drawX, out drawY);
-				}
+				MetalDevice.GetDrawableSizeFromView(tempContext, out drawX, out drawY);
 			}
 			else if (opengl)
 			{
@@ -639,14 +626,7 @@ namespace Microsoft.Xna.Framework
 				}
 				else if (metal)
 				{
-					if (MetalDevice.UsingSDL2_0_11())
-					{
-						MetalDevice.SDL_Metal_DestroyView(tempContext);
-					}
-					else
-					{
-						SDL.SDL_DestroyRenderer(tempContext);
-					}
+					SDL.SDL_Metal_DestroyView(tempContext);
 				}
 			}
 
@@ -1418,15 +1398,15 @@ namespace Microsoft.Xna.Framework
 			{
 			case VULKAN:	break; // Maybe some day!
 			case METAL:
-				return new MetalDevice(presentationParameters, adapter);
+				return new MetalDevice(presentationParameters);
 			case MODERNGL:
 				// FIXME: This is still experimental! -flibit
-				return new ModernGLDevice(presentationParameters, adapter);
+				return new ModernGLDevice(presentationParameters);
 			case THREADEDGL:
 				// FIXME: This is still experimental! -flibit
-				return new ThreadedGLDevice(presentationParameters, adapter);
+				return new ThreadedGLDevice(presentationParameters);
 			case OPENGL:
-				return new OpenGLDevice(presentationParameters, adapter);
+				return new OpenGLDevice(presentationParameters);
 			}
 			throw new NotSupportedException(
 				"The requested GLDevice is not present!"
@@ -2526,21 +2506,31 @@ namespace Microsoft.Xna.Framework
 			{
 				gc_buttonState |= Buttons.RightShoulder;
 			}
+
+			// DPad
+			ButtonState dpadUp = ButtonState.Released;
+			ButtonState dpadDown = ButtonState.Released;
+			ButtonState dpadLeft = ButtonState.Released;
+			ButtonState dpadRight = ButtonState.Released;
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_UP) != 0)
 			{
 				gc_buttonState |= Buttons.DPadUp;
+				dpadUp = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_DOWN) != 0)
 			{
 				gc_buttonState |= Buttons.DPadDown;
+				dpadDown = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_LEFT) != 0)
 			{
 				gc_buttonState |= Buttons.DPadLeft;
+				dpadLeft = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0)
 			{
 				gc_buttonState |= Buttons.DPadRight;
+				dpadRight = ButtonState.Pressed;
 			}
 
 			// Build the GamePadState, increment PacketNumber if state changed.
@@ -2548,7 +2538,7 @@ namespace Microsoft.Xna.Framework
 				new GamePadThumbSticks(stickLeft, stickRight, deadZoneMode),
 				new GamePadTriggers(triggerLeft, triggerRight, deadZoneMode),
 				new GamePadButtons(gc_buttonState),
-				new GamePadDPad(gc_buttonState)
+				new GamePadDPad(dpadUp, dpadDown, dpadLeft, dpadRight)
 			);
 			gc_builtState.IsConnected = true;
 			gc_builtState.PacketNumber = INTERNAL_states[index].PacketNumber;

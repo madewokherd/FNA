@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -523,9 +523,6 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region Private Metal State Variables
 
-		// FIXME: Remove this after SDL 2.0.12!
-		private IntPtr renderer;			// SDL_Renderer*
-
 		private IntPtr view;				// SDL_MetalView*
 		private IntPtr layer;				// CAMetalLayer*
 		private IntPtr device;				// MTLDevice*
@@ -697,57 +694,20 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#endregion
 
-		#region SDL Metal Imports
-
-		// FIXME: Remove this section after SDL 2.0.12 releases!
-
-		[DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-		public static extern IntPtr SDL_Metal_CreateView(IntPtr window);
-
-		[DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-		public static extern IntPtr SDL_Metal_DestroyView(IntPtr view);
-
-		public const string SDL_HINT_VIDEO_EXTERNAL_CONTEXT = "SDL_VIDEO_EXTERNAL_CONTEXT";
-
-		public static bool UsingSDL2_0_11()
-		{
-			SDL.SDL_version version;
-			SDL.SDL_GetVersion(out version);
-			return (version.major >= 2 && version.patch >= 11);
-		}
-
-		#endregion
-
 		#region Public Constructor
 
-		public MetalDevice(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
+		public MetalDevice(PresentationParameters presentationParameters)
+		{
 			device = MTLCreateSystemDefaultDevice();
 			queue = mtlNewCommandQueue(device);
 
-			if (UsingSDL2_0_11())
-			{
-				// Create the Metal view
-				view = SDL_Metal_CreateView(
-					presentationParameters.DeviceWindowHandle
-				);
+			// Create the Metal view
+			view = SDL.SDL_Metal_CreateView(
+				presentationParameters.DeviceWindowHandle
+			);
 
-				// Get the layer from the view
-				layer = mtlGetLayer(view);
-			}
-			else
-			{
-				// Create a renderer and grab the layer from it.
-				SDL.SDL_SetHint(SDL.SDL_HINT_RENDER_DRIVER, "metal");
-				renderer = SDL.SDL_CreateRenderer(
-					presentationParameters.DeviceWindowHandle,
-					-1,
-					SDL.SDL_RendererFlags.SDL_RENDERER_ACCELERATED
-				);
-				layer = SDL.SDL_RenderGetMetalLayer(renderer);
-			}
+			// Get the layer from the view
+			layer = mtlGetLayer(view);
 
 			// Set up the CAMetalLayer
 			mtlSetLayerDevice(layer, device);
@@ -902,16 +862,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Dispose the backbuffer
 			(Backbuffer as MetalBackbuffer).Dispose();
 
-			if (UsingSDL2_0_11())
-			{
-				// Destroy the view
-				SDL_Metal_DestroyView(view);
-			}
-			else
-			{
-				// Destroy the renderer
-				SDL.SDL_DestroyRenderer(renderer);
-			}
+			// Destroy the view
+			SDL.SDL_Metal_DestroyView(view);
 		}
 
 		#endregion
@@ -940,13 +892,9 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region Window Backbuffer Reset Method
 
-		public void ResetBackbuffer(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
-			Backbuffer.ResetFramebuffer(
-				presentationParameters
-			);
+		public void ResetBackbuffer(PresentationParameters presentationParameters)
+		{
+			Backbuffer.ResetFramebuffer(presentationParameters);
 		}
 
 		#endregion
@@ -1553,19 +1501,20 @@ namespace Microsoft.Xna.Framework.Graphics
 			int numVertices,
 			int startIndex,
 			int primitiveCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
-			MetalBuffer indexBuffer = indices.buffer as MetalBuffer;
+			MetalBuffer indexBuffer = indices as MetalBuffer;
 			indexBuffer.Bound();
 			int totalIndexOffset = (
-				(startIndex * XNAToMTL.IndexSize[(int) indices.IndexElementSize]) +
+				(startIndex * XNAToMTL.IndexSize[(int) indexElementSize]) +
 				indexBuffer.InternalOffset
 			);
 			mtlDrawIndexedPrimitives(
 				renderCommandEncoder,
 				XNAToMTL.Primitive[(int) primitiveType],
 				XNAToMTL.PrimitiveVerts(primitiveType, primitiveCount),
-				XNAToMTL.IndexType[(int) indices.IndexElementSize],
+				XNAToMTL.IndexType[(int) indexElementSize],
 				indexBuffer.Handle,
 				totalIndexOffset,
 				1
@@ -1580,19 +1529,20 @@ namespace Microsoft.Xna.Framework.Graphics
 			int startIndex,
 			int primitiveCount,
 			int instanceCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
-			MetalBuffer indexBuffer = indices.buffer as MetalBuffer;
+			MetalBuffer indexBuffer = indices as MetalBuffer;
 			indexBuffer.Bound();
 			int totalIndexOffset = (
-				(startIndex * XNAToMTL.IndexSize[(int) indices.IndexElementSize]) +
+				(startIndex * XNAToMTL.IndexSize[(int) indexElementSize]) +
 				indexBuffer.InternalOffset
 			);
 			mtlDrawIndexedPrimitives(
 				renderCommandEncoder,
 				XNAToMTL.Primitive[(int) primitiveType],
 				XNAToMTL.PrimitiveVerts(primitiveType, primitiveCount),
-				XNAToMTL.IndexType[(int) indices.IndexElementSize],
+				XNAToMTL.IndexType[(int) indexElementSize],
 				indexBuffer.Handle,
 				totalIndexOffset,
 				instanceCount

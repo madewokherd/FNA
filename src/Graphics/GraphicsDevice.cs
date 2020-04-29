@@ -433,6 +433,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			Viewport = new Viewport(PresentationParameters.Bounds);
 			ScissorRectangle = Viewport.Bounds;
 
+			// Set the initial swap interval
+			GLDevice.SetPresentationInterval(
+				PresentationParameters.PresentationInterval
+			);
+
 			// Allocate the pipeline cache to be used by Effects
 			PipelineCache = new PipelineCache(this);
 #if WIIU_GAMEPAD
@@ -653,10 +658,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			 * The GLDevice needs to know what we're up to right away.
 			 * -flibit
 			 */
-			GLDevice.ResetBackbuffer(
-				PresentationParameters,
-				Adapter
-			);
+			GLDevice.ResetBackbuffer(PresentationParameters);
 
 			// The mouse needs to know this for faux-backbuffer mouse scaling.
 			Input.Mouse.INTERNAL_BackBufferWidth = PresentationParameters.BackBufferWidth;
@@ -1110,7 +1112,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				numVertices,
 				startIndex,
 				primitiveCount,
-				Indices
+				Indices.buffer,
+				Indices.IndexElementSize
 			);
 		}
 
@@ -1148,7 +1151,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				startIndex,
 				primitiveCount,
 				instanceCount,
-				Indices
+				Indices.buffer,
+				Indices.IndexElementSize
 			);
 		}
 

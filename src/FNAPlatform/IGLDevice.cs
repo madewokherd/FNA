@@ -71,8 +71,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		void Dispose();
 
 		void ResetBackbuffer(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
+			PresentationParameters presentationParameters
 		);
 		void BeginFrame();
 		void SwapBuffers(
@@ -89,7 +88,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int numVertices,
 			int startIndex,
 			int primitiveCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		);
 		void DrawInstancedPrimitives(
 			PrimitiveType primitiveType,
@@ -99,7 +99,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int startIndex,
 			int primitiveCount,
 			int instanceCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		);
 		void DrawPrimitives(
 			PrimitiveType primitiveType,

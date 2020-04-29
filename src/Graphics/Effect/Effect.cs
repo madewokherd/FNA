@@ -611,9 +611,13 @@ namespace Microsoft.Xna.Framework.Graphics
 						pipelineCache.AlphaBlendFunction = XNABlendOp[(int) *val];
 						blendStateChanged = true;
 					}
+					else if (type == (MojoShader.MOJOSHADER_renderStateType) 178)
+					{
+						/* Apparently this is "SetSampler"? */
+					}
 					else
 					{
-						throw new NotImplementedException("Unhandled render state!");
+						throw new NotImplementedException("Unhandled render state! " + type);
 					}
 				}
 				if (blendStateChanged)
@@ -750,7 +754,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					}
 					else
 					{
-						throw new NotImplementedException("Unhandled sampler state!");
+						throw new NotImplementedException("Unhandled sampler state! " + type);
 					}
 				}
 				if (filterChanged)
@@ -771,7 +775,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							}
 							else
 							{
-								throw new NotImplementedException("Unhandled mipfilter type!");
+								throw new NotImplementedException("Unhandled mipfilter type! " + mipFilter);
 							}
 						}
 						else if (	minFilter == MojoShader.MOJOSHADER_textureFilterType.MOJOSHADER_TEXTUREFILTER_LINEAR ||
@@ -789,12 +793,12 @@ namespace Microsoft.Xna.Framework.Graphics
 							}
 							else
 							{
-								throw new NotImplementedException("Unhandled mipfilter type!");
+								throw new NotImplementedException("Unhandled mipfilter type! " + mipFilter);
 							}
 						}
 						else
 						{
-							throw new NotImplementedException("Unhandled minfilter type!");
+							throw new NotImplementedException("Unhandled minfilter type! " + minFilter);
 						}
 					}
 					else if (	magFilter == MojoShader.MOJOSHADER_textureFilterType.MOJOSHADER_TEXTUREFILTER_LINEAR ||
@@ -814,7 +818,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							}
 							else
 							{
-								throw new NotImplementedException("Unhandled mipfilter type!");
+								throw new NotImplementedException("Unhandled mipfilter type! " + mipFilter);
 							}
 						}
 						else if (	minFilter == MojoShader.MOJOSHADER_textureFilterType.MOJOSHADER_TEXTUREFILTER_LINEAR ||
@@ -832,17 +836,17 @@ namespace Microsoft.Xna.Framework.Graphics
 							}
 							else
 							{
-								throw new NotImplementedException("Unhandled mipfilter type!");
+								throw new NotImplementedException("Unhandled mipfilter type! " + mipFilter);
 							}
 						}
 						else
 						{
-							throw new NotImplementedException("Unhandled minfilter type!");
+							throw new NotImplementedException("Unhandled minfilter type! " + minFilter);
 						}
 					}
 					else
 					{
-						throw new NotImplementedException("Unhandled magfilter type!");
+						throw new NotImplementedException("Unhandled magfilter type! " + magFilter);
 					}
 					samplerChanged = true;
 				}

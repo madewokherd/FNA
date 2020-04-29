@@ -127,8 +127,8 @@ namespace Microsoft.Xna.Framework.Input
 		) : this(
 			new GamePadThumbSticks(leftThumbStick, rightThumbStick),
 			new GamePadTriggers(leftTrigger, rightTrigger),
-			new GamePadButtons(buttons),
-			new GamePadDPad(buttons)
+			GamePadButtons.FromButtonArray(buttons),
+			GamePadDPad.FromButtonArray(buttons)
 		) {
 		}
 
@@ -166,23 +166,28 @@ namespace Microsoft.Xna.Framework.Input
 		#region Public Static Operators and Override Methods
 
 		/// <summary>
-		/// Determines whether two GamePadState instances are not equal.
-		/// </summary>
-		/// <param name="left">Object on the left of the equal sign.</param>
-		/// <param name="right">Object on the right of the equal sign.</param>
-		public static bool operator !=(GamePadState left, GamePadState right)
-		{
-			return !left.Equals(right);
-		}
-
-		/// <summary>
 		/// Determines whether two GamePadState instances are equal.
 		/// </summary>
 		/// <param name="left">Object on the left of the equal sign.</param>
 		/// <param name="right">Object on the right of the equal sign.</param>
 		public static bool operator ==(GamePadState left, GamePadState right)
 		{
-			return left.Equals(right);
+			return (	(left.IsConnected == right.IsConnected) &&
+					(left.PacketNumber == right.PacketNumber) &&
+					(left.Buttons == right.Buttons) &&
+					(left.DPad == right.DPad) &&
+					(left.ThumbSticks == right.ThumbSticks) &&
+					(left.Triggers == right.Triggers)	);
+		}
+
+		/// <summary>
+		/// Determines whether two GamePadState instances are not equal.
+		/// </summary>
+		/// <param name="left">Object on the left of the equal sign.</param>
+		/// <param name="right">Object on the right of the equal sign.</param>
+		public static bool operator !=(GamePadState left, GamePadState right)
+		{
+			return !(left == right);
 		}
 
 		/// <summary>
@@ -192,7 +197,7 @@ namespace Microsoft.Xna.Framework.Input
 		/// <param name="obj">Object with which to make the comparison.</param>
 		public override bool Equals(object obj)
 		{
-			return base.Equals(obj);
+			return (obj is GamePadState) && (this == (GamePadState) obj);
 		}
 
 		/// <summary>
