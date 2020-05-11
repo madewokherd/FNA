@@ -617,9 +617,24 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				windowDepthFormat = DepthFormat.Depth24Stencil8;
 			}
+			else if (depthSize == 32 && stencilSize == 8)
+			{
+				/* There's like a 99% chance this is GDI,
+				 * expect a NoSuitableGraphicsDevice soon after
+				 * this line...
+				 */
+				FNALoggerEXT.LogWarn(
+					"Non-standard D32S8 window depth format!"
+				);
+				windowDepthFormat = DepthFormat.Depth24Stencil8;
+			}
 			else
 			{
-				throw new NotSupportedException("Unrecognized window depth/stencil format!");
+				throw new NotSupportedException(string.Format(
+					"Unrecognized window depth/stencil format: {0} {1}",
+					depthSize,
+					stencilSize
+				));
 			}
 
 			// UIKit needs special treatment for backbuffer behavior
@@ -2482,13 +2497,14 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			BindVertexBuffer(buffer);
 
+			OpenGLBuffer glBuffer = (buffer as OpenGLBuffer);
 			if (options == SetDataOptions.Discard)
 			{
 				glBufferData(
 					GLenum.GL_ARRAY_BUFFER,
-					buffer.BufferSize,
+					glBuffer.BufferSize,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					glBuffer.Dynamic
 				);
 			}
 
@@ -2517,13 +2533,14 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			BindIndexBuffer(buffer);
 
+			OpenGLBuffer glBuffer = (buffer as OpenGLBuffer);
 			if (options == SetDataOptions.Discard)
 			{
 				glBufferData(
 					GLenum.GL_ELEMENT_ARRAY_BUFFER,
-					buffer.BufferSize,
+					glBuffer.BufferSize,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					glBuffer.Dynamic
 				);
 			}
 

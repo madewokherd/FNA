@@ -593,9 +593,24 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				windowDepthFormat = DepthFormat.Depth24Stencil8;
 			}
+			else if (depthSize == 32 && stencilSize == 8)
+			{
+				/* There's like a 99% chance this is GDI,
+				 * expect a NoSuitableGraphicsDevice soon after
+				 * this line...
+				 */
+				FNALoggerEXT.LogWarn(
+					"Non-standard D32S8 window depth format!"
+				);
+				windowDepthFormat = DepthFormat.Depth24Stencil8;
+			}
 			else
 			{
-				throw new NotSupportedException("Unrecognized window depth/stencil format!");
+				throw new NotSupportedException(string.Format(
+					"Unrecognized window depth/stencil format: {0} {1}",
+					depthSize,
+					stencilSize
+				));
 			}
 
 			// Init threaded GL crap where applicable
