@@ -51,6 +51,13 @@ namespace Microsoft.Xna.Framework.Audio
 			}
 			set
 			{
+				if (IsDisposed)
+				{
+					throw new ObjectDisposedException(
+						"SoundEffectInstance"
+					);
+				}
+
 				if (value > 1.0f || value < -1.0f)
 				{
 					throw new ArgumentOutOfRangeException("value");
@@ -216,6 +223,12 @@ namespace Microsoft.Xna.Framework.Audio
 			if (emitter == null)
 			{
 				throw new ArgumentNullException("emitter");
+			}
+			if (IsDisposed)
+			{
+				throw new ObjectDisposedException(
+					"SoundEffectInstance"
+				);
 			}
 
 			is3D = true;
