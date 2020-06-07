@@ -3,10 +3,10 @@
 	url = git://github.com/flibitijibibo/SDL2-CS.git
 [submodule "lib/FAudio"]
 	path = lib/FAudio
-	url = ../FAudio.git
+	url = git://github.com/FNA-XNA/FAudio.git
 [submodule "lib/MojoShader"]
 	path = lib/MojoShader
-	url = ../MojoShader.git
+	url = git://github.com/FNA-XNA/MojoShader.git
 [submodule "lib/Theorafile"]
 	path = lib/Theorafile
-	url = ../Theorafile.git
+	url = git://github.com/FNA-XNA/Theorafile.git
