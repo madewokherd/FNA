@@ -113,6 +113,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		// Where are we in the vertex buffer ring?
 		private int bufferOffset;
+		private bool supportsNoOverwrite;
 
 		// Matrix to be used when creating the projection matrix
 		private Matrix transformMatrix;
@@ -174,6 +175,9 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			beginCalled = false;
 			numSprites = 0;
+			supportsNoOverwrite = FNA3D.FNA3D_SupportsNoOverwrite(
+				GraphicsDevice.GLDevice
+			) == 1;
 		}
 
 		#endregion
@@ -1061,10 +1065,19 @@ namespace Microsoft.Xna.Framework.Graphics
 			float depth,
 			byte effects
 		) {
-			if (numSprites >= MAX_SPRITES)
+			if (numSprites >= vertexInfo.Length)
 			{
-				// Oh crap, we're out of space, flush!
-				FlushBatch();
+				/* We're out of room, add another batch max
+				 * to the total array size. This is required for
+				 * sprite sorting accuracy; note that we do NOT
+				 * increase the graphics buffer sizes!
+				 * -flibit
+				 */
+				int newMax = vertexInfo.Length + MAX_SPRITES;
+				Array.Resize(ref vertexInfo, newMax);
+				Array.Resize(ref textureInfo, newMax);
+				Array.Resize(ref spriteInfos, newMax);
+				Array.Resize(ref sortedSpriteInfos, newMax);
 			}
 
 			if (sortMode == SpriteSortMode.Immediate)
@@ -1091,9 +1104,9 @@ namespace Microsoft.Xna.Framework.Graphics
 						effects
 					);
 
-					if (GraphicsDevice.GLDevice.SupportsNoOverwrite)
+					if (supportsNoOverwrite)
 					{
-						offset = UpdateVertexBuffer(1);
+						offset = UpdateVertexBuffer(0, 1);
 					}
 					else
 					{
@@ -1172,9 +1185,6 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private unsafe void FlushBatch()
 		{
-			int offset = 0;
-			Texture2D curTexture = null;
-
 			PrepRenderState();
 
 			if (numSprites == 0)
@@ -1238,29 +1248,40 @@ namespace Microsoft.Xna.Framework.Graphics
 				}}}
 			}
 
-			int baseOff = UpdateVertexBuffer(numSprites);
+			int arrayOffset = 0;
+		nextbatch:
+			int batchSize = Math.Min(numSprites, MAX_SPRITES);
+			int baseOff = UpdateVertexBuffer(arrayOffset, batchSize);
+			int offset = 0;
 
-			curTexture = textureInfo[0];
-			for (int i = 1; i < numSprites; i += 1)
+			Texture2D curTexture = textureInfo[arrayOffset];
+			for (int i = 1; i < batchSize; i += 1)
 			{
-				if (textureInfo[i] != curTexture)
+				Texture2D tex = textureInfo[arrayOffset + i];
+				if (tex != curTexture)
 				{
 					DrawPrimitives(curTexture, baseOff + offset, i - offset);
-					curTexture = textureInfo[i];
+					curTexture = tex;
 					offset = i;
 				}
 			}
-			DrawPrimitives(curTexture, baseOff + offset, numSprites - offset);
+			DrawPrimitives(curTexture, baseOff + offset, batchSize - offset);
 
+			if (numSprites > MAX_SPRITES)
+			{
+				numSprites -= MAX_SPRITES;
+				arrayOffset += MAX_SPRITES;
+				goto nextbatch;
+			}
 			numSprites = 0;
 		}
 
-		private unsafe int UpdateVertexBuffer(int count)
+		private unsafe int UpdateVertexBuffer(int start, int count)
 		{
 			int offset;
 			SetDataOptions options;
 			if (	(bufferOffset + count) > MAX_SPRITES ||
-				!GraphicsDevice.GLDevice.SupportsNoOverwrite	)
+				!supportsNoOverwrite	)
 			{
 				offset = 0;
 				options = SetDataOptions.Discard;
@@ -1271,7 +1292,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				options = SetDataOptions.NoOverwrite;
 			}
 
-			fixed (VertexPositionColorTexture4* p = &vertexInfo[0])
+			fixed (VertexPositionColorTexture4* p = &vertexInfo[start])
 			{
 				/* We use Discard here because the last batch
 				 * may still be executing, and we can't always

@@ -9,6 +9,7 @@
 
 #region Using Statements
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 #endregion
 
@@ -68,11 +69,12 @@ namespace Microsoft.Xna.Framework.Graphics
 				Format = format;
 			}
 
-			texture = GraphicsDevice.GLDevice.CreateTextureCube(
+			texture = FNA3D.FNA3D_CreateTextureCube(
+				GraphicsDevice.GLDevice,
 				Format,
 				Size,
 				LevelCount,
-				(this is IRenderTarget)
+				(byte) ((this is IRenderTarget) ? 1 : 0)
 			);
 		}
 
@@ -141,9 +143,9 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			int elementSizeInBytes = Marshal.SizeOf(typeof(T));
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.SetTextureDataCube(
+			FNA3D.FNA3D_SetTextureDataCube(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
 				xOffset,
 				yOffset,
 				width,
@@ -184,9 +186,9 @@ namespace Microsoft.Xna.Framework.Graphics
 				height = Math.Max(1, Size >> level);
 			}
 
-			GraphicsDevice.GLDevice.SetTextureDataCube(
+			FNA3D.FNA3D_SetTextureDataCube(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
 				xOffset,
 				yOffset,
 				width,
@@ -267,23 +269,116 @@ namespace Microsoft.Xna.Framework.Graphics
 				subH = rect.Value.Height;
 			}
 
+			int elementSizeInBytes = Marshal.SizeOf(typeof(T));
+			ValidateGetDataFormat(Format, elementSizeInBytes);
+
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.GetTextureDataCube(
+			FNA3D.FNA3D_GetTextureDataCube(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
-				Size >> level,
-				cubeMapFace,
-				level,
 				subX,
 				subY,
 				subW,
 				subH,
-				handle.AddrOfPinnedObject(),
-				startIndex,
-				elementCount,
-				Marshal.SizeOf(typeof(T))
+				cubeMapFace,
+				level,
+				handle.AddrOfPinnedObject() + (startIndex * elementSizeInBytes),
+				elementCount * elementSizeInBytes
 			);
 			handle.Free();
+		}
+
+		#endregion
+
+		#region Public Static TextureCube Extensions
+
+		public static TextureCube DDSFromStreamEXT(
+			GraphicsDevice graphicsDevice,
+			Stream stream
+		) {
+			TextureCube result;
+
+			// Begin BinaryReader, ignoring a tab!
+			using (BinaryReader reader = new BinaryReader(stream))
+			{
+
+			int width, height, levels, levelSize, blockSize;
+			SurfaceFormat format;
+			Texture.ParseDDS(
+				reader,
+				out format,
+				out width,
+				out height,
+				out levels,
+				out levelSize,
+				out blockSize
+			);
+
+			// Allocate/Load texture
+			result = new TextureCube(
+				graphicsDevice,
+				width,
+				levels > 1,
+				format
+			);
+
+			byte[] tex = null;
+			if (	stream is MemoryStream &&
+				((MemoryStream) stream).TryGetBuffer(out tex)	)
+			{
+				for (int face = 0; face < 6; face += 1)
+				{
+					int mipLevelSize = levelSize;
+					for (int i = 0; i < levels; i += 1)
+					{
+						result.SetData(
+							(CubeMapFace) face,
+							i,
+							null,
+							tex,
+							(int) stream.Seek(0, SeekOrigin.Current),
+							mipLevelSize
+						);
+						stream.Seek(
+							mipLevelSize,
+							SeekOrigin.Current
+						);
+						mipLevelSize = Math.Max(
+							mipLevelSize >> 2,
+							blockSize
+						);
+					}
+				}
+			}
+			else
+			{
+				for (int face = 0; face < 6; face += 1)
+				{
+					int mipLevelSize = levelSize;
+					for (int i = 0; i < levels; i += 1)
+					{
+						tex = reader.ReadBytes(mipLevelSize);
+						result.SetData(
+							(CubeMapFace) face,
+							i,
+							null,
+							tex,
+							0,
+							tex.Length
+						);
+						mipLevelSize = Math.Max(
+							mipLevelSize >> 2,
+							blockSize
+						);
+					}
+				}
+			}
+
+			// End BinaryReader
+			}
+
+			// Finally.
+			return result;
 		}
 
 		#endregion

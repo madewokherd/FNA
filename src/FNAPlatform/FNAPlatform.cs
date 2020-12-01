@@ -10,6 +10,7 @@
 #region Using Statements
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Audio;
@@ -50,21 +51,28 @@ namespace Microsoft.Xna.Framework
 			if (args.TryGetValue("gldevice", out arg))
 			{
 				Environment.SetEnvironmentVariable(
-					"FNA_GRAPHICS_FORCE_GLDEVICE",
+					"FNA3D_FORCE_DRIVER",
 					arg
+				);
+			}
+			if (args.TryGetValue("disablelateswaptear", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA3D_DISABLE_LATESWAPTEAR",
+					"1"
 				);
 			}
 			if (args.TryGetValue("mojoshaderprofile", out arg))
 			{
 				Environment.SetEnvironmentVariable(
-					"FNA_GRAPHICS_MOJOSHADER_PROFILE",
+					"FNA3D_MOJOSHADER_PROFILE",
 					arg
 				);
 			}
 			if (args.TryGetValue("backbufferscalenearest", out arg) && arg == "1")
 			{
 				Environment.SetEnvironmentVariable(
-					"FNA_GRAPHICS_BACKBUFFER_SCALE_NEAREST",
+					"FNA3D_BACKBUFFER_SCALE_NEAREST",
 					"1"
 				);
 			}
@@ -85,8 +93,9 @@ namespace Microsoft.Xna.Framework
 			GetWindowBorderless =		SDL2_FNAPlatform.GetWindowBorderless;
 			SetWindowBorderless =		SDL2_FNAPlatform.SetWindowBorderless;
 			SetWindowTitle =		SDL2_FNAPlatform.SetWindowTitle;
-			RunLoop =			SDL2_FNAPlatform.RunLoop;
-			CreateGLDevice =		SDL2_FNAPlatform.CreateGLDevice;
+			RegisterGame =			SDL2_FNAPlatform.RegisterGame;
+			UnregisterGame =		SDL2_FNAPlatform.UnregisterGame;
+			PollEvents =			SDL2_FNAPlatform.PollEvents;
 			GetGraphicsAdapters =		SDL2_FNAPlatform.GetGraphicsAdapters;
 			GetCurrentDisplayMode =		SDL2_FNAPlatform.GetCurrentDisplayMode;
 			GetKeyFromScancode =		SDL2_FNAPlatform.GetKeyFromScancode;
@@ -106,10 +115,6 @@ namespace Microsoft.Xna.Framework
 			GetStorageRoot =		SDL2_FNAPlatform.GetStorageRoot;
 			GetDriveInfo =			SDL2_FNAPlatform.GetDriveInfo;
 			ShowRuntimeError =		SDL2_FNAPlatform.ShowRuntimeError;
-			TextureDataFromStream =		SDL2_FNAPlatform.TextureDataFromStream;
-			TextureDataFromStreamPtr =	SDL2_FNAPlatform.TextureDataFromStreamPtr;
-			SavePNG =			SDL2_FNAPlatform.SavePNG;
-			SaveJPG =			SDL2_FNAPlatform.SaveJPG;
 			GetMicrophones =		SDL2_FNAPlatform.GetMicrophones;
 			GetMicrophoneSamples =		SDL2_FNAPlatform.GetMicrophoneSamples;
 			GetMicrophoneQueuedBytes =	SDL2_FNAPlatform.GetMicrophoneQueuedBytes;
@@ -119,20 +124,10 @@ namespace Microsoft.Xna.Framework
 			UpdateTouchPanelState =		SDL2_FNAPlatform.UpdateTouchPanelState;
 			GetNumTouchFingers =		SDL2_FNAPlatform.GetNumTouchFingers;
 			SupportsOrientationChanges =	SDL2_FNAPlatform.SupportsOrientationChanges;
+			NeedsPlatformMainLoop = 	SDL2_FNAPlatform.NeedsPlatformMainLoop;
+			RunPlatformMainLoop =		SDL2_FNAPlatform.RunPlatformMainLoop;
 
-			// Don't overwrite application log hooks!
-			if (FNALoggerEXT.LogInfo == null)
-			{
-				FNALoggerEXT.LogInfo = Console.WriteLine;
-			}
-			if (FNALoggerEXT.LogWarn == null)
-			{
-				FNALoggerEXT.LogWarn = Console.WriteLine;
-			}
-			if (FNALoggerEXT.LogError == null)
-			{
-				FNALoggerEXT.LogError = Console.WriteLine;
-			}
+			FNALoggerEXT.Initialize();
 
 			AppDomain.CurrentDomain.ProcessExit += SDL2_FNAPlatform.ProgramExit;
 			TitleLocation = SDL2_FNAPlatform.ProgramInit(args);
@@ -143,6 +138,30 @@ namespace Microsoft.Xna.Framework
 		#region Public Static Variables
 
 		public static readonly string TitleLocation;
+
+		/* Setup Text Input Control Character Arrays
+		 * (Only 7 control keys supported at this time)
+		 */
+		public static readonly char[] TextInputCharacters = new char[]
+		{
+			(char) 2,	// Home
+			(char) 3,	// End
+			(char) 8,	// Backspace
+			(char) 9,	// Tab
+			(char) 13,	// Enter
+			(char) 127,	// Delete
+			(char) 22	// Ctrl+V (Paste)
+		};
+		public static readonly Dictionary<Keys, int> TextInputBindings = new Dictionary<Keys, int>()
+		{
+			{ Keys.Home,	0 },
+			{ Keys.End,	1 },
+			{ Keys.Back,	2 },
+			{ Keys.Tab,	3 },
+			{ Keys.Enter,	4 },
+			{ Keys.Delete,	5 }
+			// Ctrl+V is special!
+		};
 
 		#endregion
 
@@ -182,14 +201,20 @@ namespace Microsoft.Xna.Framework
 		public delegate void SetWindowTitleFunc(IntPtr window, string title);
 		public static readonly SetWindowTitleFunc SetWindowTitle;
 
-		public delegate void RunLoopFunc(Game game);
-		public static readonly RunLoopFunc RunLoop;
+		public delegate GraphicsAdapter RegisterGameFunc(Game game);
+		public static readonly RegisterGameFunc RegisterGame;
 
-		public delegate IGLDevice CreateGLDeviceFunc(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
+		public delegate void UnregisterGameFunc(Game game);
+		public static readonly UnregisterGameFunc UnregisterGame;
+
+		public delegate void PollEventsFunc(
+			Game game,
+			ref GraphicsAdapter currentAdapter,
+			bool[] textInputControlDown,
+			int[] textInputControlRepeat,
+			ref bool textInputSuppress
 		);
-		public static readonly CreateGLDeviceFunc CreateGLDevice;
+		public static readonly PollEventsFunc PollEvents;
 
 		public delegate GraphicsAdapter[] GetGraphicsAdaptersFunc();
 		public static readonly GetGraphicsAdaptersFunc GetGraphicsAdapters;
@@ -268,49 +293,6 @@ namespace Microsoft.Xna.Framework
 		public delegate void ShowRuntimeErrorFunc(string title, string message);
 		public static readonly ShowRuntimeErrorFunc ShowRuntimeError;
 
-		public delegate void TextureDataFromStreamFunc(
-			Stream stream,
-			out int width,
-			out int height,
-			out byte[] pixels,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
-		);
-		public static readonly TextureDataFromStreamFunc TextureDataFromStream;
-
-		public delegate void TextureDataFromStreamPtrFunc(
-			Stream stream,
-			out int width,
-			out int height,
-			out IntPtr pixels,
-			out int len,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
-		);
-		public static readonly TextureDataFromStreamPtrFunc TextureDataFromStreamPtr;
-
-		public delegate void SavePNGFunc(
-			Stream stream,
-			int width,
-			int height,
-			int imgWidth,
-			int imgHeight,
-			byte[] data
-		);
-		public static readonly SavePNGFunc SavePNG;
-
-		public delegate void SaveJPGFunc(
-			Stream stream,
-			int width,
-			int height,
-			int imgWidth,
-			int imgHeight,
-			byte[] data
-		);
-		public static readonly SaveJPGFunc SaveJPG;
-
 		public delegate Microphone[] GetMicrophonesFunc();
 		public static readonly GetMicrophonesFunc GetMicrophones;
 
@@ -342,6 +324,12 @@ namespace Microsoft.Xna.Framework
 
 		public delegate bool SupportsOrientationChangesFunc();
 		public static readonly SupportsOrientationChangesFunc SupportsOrientationChanges;
+
+		public delegate bool NeedsPlatformMainLoopFunc();
+		public static readonly NeedsPlatformMainLoopFunc NeedsPlatformMainLoop;
+
+		public delegate void RunPlatformMainLoopFunc(Game game);
+		public static readonly RunPlatformMainLoopFunc RunPlatformMainLoop;
 
 		#endregion
 	}

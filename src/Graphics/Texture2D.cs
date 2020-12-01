@@ -94,12 +94,13 @@ namespace Microsoft.Xna.Framework.Graphics
 				Format = format;
 			}
 
-			texture = GraphicsDevice.GLDevice.CreateTexture2D(
+			texture = FNA3D.FNA3D_CreateTexture2D(
+				GraphicsDevice.GLDevice,
 				Format,
 				Width,
 				Height,
 				LevelCount,
-				(this is IRenderTarget)
+				(byte) ((this is IRenderTarget) ? 1 : 0)
 			);
 		}
 
@@ -161,9 +162,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 			int elementSize = Marshal.SizeOf(typeof(T));
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.SetTextureData2D(
+			FNA3D.FNA3D_SetTextureData2D(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
 				x,
 				y,
 				w,
@@ -202,9 +203,9 @@ namespace Microsoft.Xna.Framework.Graphics
 				h = Math.Max(Height >> level, 1);
 			}
 
-			GraphicsDevice.GLDevice.SetTextureData2D(
+			FNA3D.FNA3D_SetTextureData2D(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
 				x,
 				y,
 				w,
@@ -279,21 +280,20 @@ namespace Microsoft.Xna.Framework.Graphics
 				subH = rect.Value.Height;
 			}
 
+			int elementSizeInBytes = Marshal.SizeOf(typeof(T));
+			ValidateGetDataFormat(Format, elementSizeInBytes);
+
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.GetTextureData2D(
+			FNA3D.FNA3D_GetTextureData2D(
+				GraphicsDevice.GLDevice,
 				texture,
-				Format,
-				Width >> level,
-				Height >> level,
-				level,
 				subX,
 				subY,
 				subW,
 				subH,
-				handle.AddrOfPinnedObject(),
-				startIndex,
-				elementCount,
-				Marshal.SizeOf(typeof(T))
+				level,
+				handle.AddrOfPinnedObject() + (startIndex * elementSizeInBytes),
+				elementCount * elementSizeInBytes
 			);
 			handle.Free();
 		}
@@ -304,32 +304,60 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void SaveAsJpeg(Stream stream, int width, int height)
 		{
-			// Get the Texture2D pixels
-			byte[] data = new byte[Width * Height * GetFormatSize(Format)];
-			GetData(data);
-			FNAPlatform.SaveJPG(
-				stream,
-				width,
+			int len = Width * Height * GetFormatSize(Format);
+			IntPtr data = Marshal.AllocHGlobal(len);
+			FNA3D.FNA3D_GetTextureData2D(
+				GraphicsDevice.GLDevice,
+				texture,
+				0,
+				0,
+				Width,
 				height,
+				0,
+				data,
+				len
+			);
+
+			FNA3D.WriteJPGStream(
+				stream,
 				Width,
 				Height,
-				data
+				width,
+				height,
+				data,
+				100 // FIXME: What does XNA pick for quality? -flibit
 			);
+
+			Marshal.FreeHGlobal(data);
 		}
 
 		public void SaveAsPng(Stream stream, int width, int height)
 		{
-			// Get the Texture2D pixels
-			byte[] data = new byte[Width * Height * GetFormatSize(Format)];
-			GetData(data);
-			FNAPlatform.SavePNG(
-				stream,
-				width,
+			int len = Width * Height * GetFormatSize(Format);
+			IntPtr data = Marshal.AllocHGlobal(len);
+			FNA3D.FNA3D_GetTextureData2D(
+				GraphicsDevice.GLDevice,
+				texture,
+				0,
+				0,
+				Width,
 				height,
+				0,
+				data,
+				len
+			);
+
+
+			FNA3D.WritePNGStream(
+				stream,
 				Width,
 				Height,
+				width,
+				height,
 				data
 			);
+
+			Marshal.FreeHGlobal(data);
 		}
 
 		#endregion
@@ -343,18 +371,14 @@ namespace Microsoft.Xna.Framework.Graphics
 				stream.Seek(0, SeekOrigin.Begin);
 			}
 
-			// Read the image data from the stream
 			int width, height, len;
-			IntPtr pixels;
-			FNAPlatform.TextureDataFromStreamPtr(
+			IntPtr pixels = FNA3D.ReadImageStream(
 				stream,
 				out width,
 				out height,
-				out pixels,
 				out len
 			);
 
-			// Create the Texture2D from the raw pixel data
 			Texture2D result = new Texture2D(
 				graphicsDevice,
 				width,
@@ -366,7 +390,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				pixels,
 				len
 			);
-			Marshal.FreeHGlobal(pixels);
+
+			FNA3D.FNA3D_Image_Free(pixels);
 			return result;
 		}
 
@@ -377,21 +402,22 @@ namespace Microsoft.Xna.Framework.Graphics
 			int height,
 			bool zoom
 		) {
-			// Read the image data from the stream
+			if (stream.CanSeek && stream.Position == stream.Length)
+			{
+				stream.Seek(0, SeekOrigin.Begin);
+			}
+
 			int realWidth, realHeight, len;
-			IntPtr pixels;
-			FNAPlatform.TextureDataFromStreamPtr(
+			IntPtr pixels = FNA3D.ReadImageStream(
 				stream,
 				out realWidth,
 				out realHeight,
-				out pixels,
 				out len,
 				width,
 				height,
 				zoom
 			);
 
-			// Create the Texture2D from the raw pixel data
 			Texture2D result = new Texture2D(
 				graphicsDevice,
 				realWidth,
@@ -403,7 +429,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				pixels,
 				len
 			);
-			Marshal.FreeHGlobal(pixels);
+
+			FNA3D.FNA3D_Image_Free(pixels);
 			return result;
 		}
 
@@ -435,177 +462,49 @@ namespace Microsoft.Xna.Framework.Graphics
 			int requestedHeight = -1,
 			bool zoom = false
 		) {
-			FNAPlatform.TextureDataFromStream(
+			if (stream.CanSeek && stream.Position == stream.Length)
+			{
+				stream.Seek(0, SeekOrigin.Begin);
+			}
+
+			int len;
+			IntPtr pixPtr = FNA3D.ReadImageStream(
 				stream,
 				out width,
 				out height,
-				out pixels,
+				out len,
 				requestedWidth,
 				requestedHeight,
 				zoom
 			);
+
+			pixels = new byte[len];
+			Marshal.Copy(pixPtr, pixels, 0, len);
+
+			FNA3D.FNA3D_Image_Free(pixPtr);
 		}
 
-		// DDS loading extension, based on MojoDDS
 		public static Texture2D DDSFromStreamEXT(
 			GraphicsDevice graphicsDevice,
 			Stream stream
 		) {
-			// A whole bunch of magic numbers, yay DDS!
-			const uint DDS_MAGIC = 0x20534444;
-			const uint DDS_HEADERSIZE = 124;
-			const uint DDS_PIXFMTSIZE = 32;
-			const uint DDSD_CAPS = 0x1;
-			const uint DDSD_HEIGHT = 0x2;
-			const uint DDSD_WIDTH = 0x4;
-			const uint DDSD_PITCH = 0x8;
-			const uint DDSD_FMT = 0x1000;
-			const uint DDSD_LINEARSIZE = 0x80000;
-			const uint DDSD_REQ = (
-				DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_FMT
-			);
-			const uint DDSCAPS_MIPMAP = 0x400000;
-			const uint DDSCAPS_TEXTURE = 0x1000;
-			const uint DDPF_FOURCC = 0x4;
-			const uint DDPF_RGB = 0x40;
-			const uint FOURCC_DXT1 = 0x31545844;
-			const uint FOURCC_DXT3 = 0x33545844;
-			const uint FOURCC_DXT5 = 0x35545844;
-			// const uint FOURCC_DX10 = 0x30315844;
-			const uint pitchAndLinear = (
-				DDSD_PITCH | DDSD_LINEARSIZE
-			);
-
 			Texture2D result;
 
 			// Begin BinaryReader, ignoring a tab!
 			using (BinaryReader reader = new BinaryReader(stream))
 			{
 
-			// File should start with 'DDS '
-			if (reader.ReadUInt32() != DDS_MAGIC)
-			{
-				return null;
-			}
-
-			// Texture info
-			uint size = reader.ReadUInt32();
-			if (size != DDS_HEADERSIZE)
-			{
-				return null;
-			}
-			uint flags = reader.ReadUInt32();
-			if ((flags & DDSD_REQ) != DDSD_REQ)
-			{
-				return null;
-			}
-			if ((flags & pitchAndLinear) == pitchAndLinear)
-			{
-				return null;
-			}
-			int height = reader.ReadInt32();
-			int width = reader.ReadInt32();
-			reader.ReadUInt32(); // dwPitchOrLinearSize, unused
-			reader.ReadUInt32(); // dwDepth, unused
-			int levels = reader.ReadInt32();
-
-			// "Reserved"
-			reader.ReadBytes(4 * 11);
-
-			// Format info
-			uint formatSize = reader.ReadUInt32();
-			if (formatSize != DDS_PIXFMTSIZE)
-			{
-				return null;
-			}
-			uint formatFlags = reader.ReadUInt32();
-			uint formatFourCC = reader.ReadUInt32();
-			uint formatRGBBitCount = reader.ReadUInt32();
-			uint formatRBitMask = reader.ReadUInt32();
-			uint formatGBitMask = reader.ReadUInt32();
-			uint formatBBitMask = reader.ReadUInt32();
-			uint formatABitMask = reader.ReadUInt32();
-
-			// dwCaps "stuff"
-			uint caps = reader.ReadUInt32();
-			if ((caps & DDSCAPS_TEXTURE) == 0)
-			{
-				return null;
-			}
-			uint caps2 = reader.ReadUInt32();
-			if (caps2 != 0)
-			{
-				return null;
-			}
-			reader.ReadUInt32(); // dwCaps3, unused
-			reader.ReadUInt32(); // dwCaps4, unused
-
-			// "Reserved"
-			reader.ReadUInt32();
-
-			// Mipmap sanity check
-			if ((caps & DDSCAPS_MIPMAP) != DDSCAPS_MIPMAP)
-			{
-				levels = 1;
-			}
-
-			// Determine texture format
+			int width, height, levels, levelSize, blockSize;
 			SurfaceFormat format;
-			int levelSize;
-			int blockSize = 0;
-			if ((formatFlags & DDPF_FOURCC) == DDPF_FOURCC)
-			{
-				if (formatFourCC == FOURCC_DXT1)
-				{
-					format = SurfaceFormat.Dxt1;
-					blockSize = 8;
-				}
-				else if (formatFourCC == FOURCC_DXT3)
-				{
-					format = SurfaceFormat.Dxt3;
-					blockSize = 16;
-				}
-				else if (formatFourCC == FOURCC_DXT5)
-				{
-					format = SurfaceFormat.Dxt5;
-					blockSize = 16;
-				}
-				else
-				{
-					throw new NotSupportedException(
-						"Unsupported DDS texture format"
-					);
-				}
-				levelSize = (
-					((width > 0 ? ((width + 3) / 4) : 1) * blockSize) *
-					(height > 0 ? ((height + 3) / 4) : 1)
-				);
-			}
-			else if ((formatFlags & DDPF_RGB) == DDPF_RGB)
-			{
-				if (	formatRGBBitCount != 32 ||
-					formatRBitMask != 0x00FF0000 ||
-					formatGBitMask != 0x0000FF00 ||
-					formatBBitMask != 0x000000FF ||
-					formatABitMask != 0xFF000000	)
-				{
-					throw new NotSupportedException(
-						"Unsupported DDS texture format"
-					);
-				}
-
-				format = SurfaceFormat.ColorBgraEXT;
-				levelSize = (int) (
-					(((width * formatRGBBitCount) + 7) / 8) *
-					height
-				);
-			}
-			else
-			{
-				throw new NotSupportedException(
-					"Unsupported DDS texture format"
-				);
-			}
+			Texture.ParseDDS(
+				reader,
+				out format,
+				out width,
+				out height,
+				out levels,
+				out levelSize,
+				out blockSize
+			);
 
 			// Allocate/Load texture
 			result = new Texture2D(
@@ -615,7 +514,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				levels > 1,
 				format
 			);
-			
+
 			byte[] tex = null;
 			if (	stream is MemoryStream &&
 				((MemoryStream) stream).TryGetBuffer(out tex)	)

@@ -36,22 +36,15 @@ namespace Microsoft.Xna.Framework
 		) == "1";
 
 		private static bool SupportsGlobalMouse;
-		private static string ForcedGLDevice;
-		private static string ActualGLDevice;
 
 		// For iOS high dpi support
 		private static int RetinaWidth;
 		private static int RetinaHeight;
 
-		#endregion
-
-		#region Graphics Backend String Constants
-
-		private const string OPENGL = "OpenGLDevice";
-		private const string MODERNGL = "ModernGLDevice";
-		private const string THREADEDGL = "ThreadedGLDevice";
-		private const string METAL = "MetalDevice";
-		private const string VULKAN = "VulkanDevice";
+		private static readonly bool OSXUseSpaces = (
+			SDL.SDL_GetPlatform().Equals("Mac OS X") && // Prevents race with OSVersion
+			SDL.SDL_GetHintBoolean(SDL.SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, SDL.SDL_bool.SDL_TRUE) == SDL.SDL_bool.SDL_TRUE
+		);
 
 		#endregion
 
@@ -124,12 +117,22 @@ namespace Microsoft.Xna.Framework
 			{
 				OSVersion = SDL.SDL_GetPlatform();
 			}
-			catch(Exception e)
+			catch(DllNotFoundException e)
 			{
 				FNALoggerEXT.LogError(
 					"SDL2 was not found! Do you have fnalibs?"
 				);
 				throw e;
+			}
+			catch(BadImageFormatException e)
+			{
+				string error = string.Format(
+					"This process is {0}-bit, the DLL is {1}-bit!",
+					(IntPtr.Size == 4) ? "32" : "64",
+					(IntPtr.Size == 4) ? "64" : "32"
+				);
+				FNALoggerEXT.LogError(error);
+				throw new BadImageFormatException(error, e);
 			}
 
 			/* SDL2 might complain if an OS that uses SDL_main has not actually
@@ -175,9 +178,14 @@ namespace Microsoft.Xna.Framework
 				 * WM_PAINT events correctly. So we get to do this!
 				 * -flibit
 				 */
+				IntPtr prevUserData;
+				SDL.SDL_GetEventFilter(
+					out prevEventFilter,
+					out prevUserData
+				);
 				SDL.SDL_SetEventFilter(
 					win32OnPaint,
-					IntPtr.Zero
+					prevUserData
 				);
 			}
 
@@ -198,33 +206,26 @@ namespace Microsoft.Xna.Framework
 
 			// Built-in SDL2 command line arguments
 			string arg;
-			if (args.TryGetValue("disablelateswaptear", out arg) && arg == "1")
-			{
-				Environment.SetEnvironmentVariable(
-					"FNA_OPENGL_DISABLE_LATESWAPTEAR",
-					"1"
-				);
-			}
 			if (args.TryGetValue("glprofile", out arg))
 			{
 				if (arg == "es3")
 				{
 					Environment.SetEnvironmentVariable(
-						"FNA_OPENGL_FORCE_ES3",
+						"FNA3D_OPENGL_FORCE_ES3",
 						"1"
 					);
 				}
 				else if (arg == "core")
 				{
 					Environment.SetEnvironmentVariable(
-						"FNA_OPENGL_FORCE_CORE_PROFILE",
+						"FNA3D_OPENGL_FORCE_CORE_PROFILE",
 						"1"
 					);
 				}
 				else if (arg == "compatibility")
 				{
 					Environment.SetEnvironmentVariable(
-						"FNA_OPENGL_FORCE_COMPATIBILITY_PROFILE",
+						"FNA3D_OPENGL_FORCE_COMPATIBILITY_PROFILE",
 						"1"
 					);
 				}
@@ -232,7 +233,7 @@ namespace Microsoft.Xna.Framework
 			if (args.TryGetValue("angle", out arg) && arg == "1")
 			{
 				Environment.SetEnvironmentVariable(
-					"FNA_OPENGL_FORCE_ES3",
+					"FNA3D_OPENGL_FORCE_ES3",
 					"1"
 				);
 				Environment.SetEnvironmentVariable(
@@ -259,15 +260,19 @@ namespace Microsoft.Xna.Framework
 				);
 			}
 
-			// By default, assume physical layout, since XNA games probably assume XInput
-			hint = SDL.SDL_GetHint(SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS);
-			if (String.IsNullOrEmpty(hint))
-			{
-				SDL.SDL_SetHint(
-					SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS,
-					"0"
-				);
-			}
+			/* By default, assume physical layout, since XNA games mostly assume XInput.
+			 * This used to be more flexible until Steam decided to enforce the variable
+			 * that already had their desired value as the default (big surprise).
+			 *
+			 * TL;DR: Suck my ass, Steam
+			 *
+			 * -flibit
+			 */
+			SDL.SDL_SetHintWithPriority(
+				SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS,
+				"0",
+				SDL.SDL_HintPriority.SDL_HINT_OVERRIDE
+			);
 
 			SDL.SDL_SetHint(
 				SDL.SDL_HINT_ORIENTATIONS,
@@ -308,187 +313,6 @@ namespace Microsoft.Xna.Framework
 
 		#region Window Methods
 
-		private static bool PrepareVKAttributes()
-		{
-			// Who will write the VulkanDevice.. will it be YOU?
-			return false;
-		}
-
-		private static bool PrepareMTLAttributes()
-		{
-			if (	String.IsNullOrEmpty(ForcedGLDevice) ||
-				!ForcedGLDevice.Equals(METAL)		)
-			{
-				return false;
-			}
-
-#if DEBUG
-			// Always enable the validation layer in debug mode
-			Environment.SetEnvironmentVariable(
-				"METAL_DEVICE_WRAPPER_TYPE",
-				"1"
-			);
-#endif
-
-			if (OSVersion.Equals("Mac OS X"))
-			{
-				// Let's find out if the OS supports Metal...
-				try
-				{
-					if (MetalDevice.MTLCreateSystemDefaultDevice() != IntPtr.Zero)
-					{
-						// We're good to go!
-						return true;
-					}
-				}
-				catch
-				{
-					// The OS is too old for Metal!
-					return false;
-				}
-			}
-			else if (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS"))
-			{
-				/* We only support iOS/tvOS 11.0+ so
-				 * Metal is guaranteed to be supported.
-				 */
-				return true;
-			}
-
-			// Oh well, to OpenGL we go!
-			return false;
-		}
-
-		private static bool PrepareGLAttributes()
-		{
-			if (	!String.IsNullOrEmpty(ForcedGLDevice) &&
-				!ForcedGLDevice.Equals(OPENGL) &&
-				!ForcedGLDevice.Equals(MODERNGL) &&
-				!ForcedGLDevice.Equals(THREADEDGL)	)
-			{
-				return false;
-			}
-
-			// GLContext environment variables
-			bool forceES3 = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_FORCE_ES3"
-			) == "1";
-			bool forceCoreProfile = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_FORCE_CORE_PROFILE"
-			) == "1";
-			bool forceCompatProfile = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_FORCE_COMPATIBILITY_PROFILE"
-			) == "1";
-
-			// Some platforms are GLES only
-			forceES3 |= (
-				OSVersion.Equals("WinRT") ||
-				OSVersion.Equals("iOS") ||
-				OSVersion.Equals("tvOS") ||
-				OSVersion.Equals("Stadia") ||
-				OSVersion.Equals("Android") ||
-				OSVersion.Equals("Emscripten")
-			);
-
-			int depthSize = 24;
-			int stencilSize = 8;
-			DepthFormat windowDepthFormat;
-			if (Enum.TryParse(
-				Environment.GetEnvironmentVariable("FNA_OPENGL_WINDOW_DEPTHSTENCILFORMAT"),
-				true,
-				out windowDepthFormat
-			)) {
-				if (windowDepthFormat == DepthFormat.None)
-				{
-					depthSize = 0;
-					stencilSize = 0;
-				}
-				else if (windowDepthFormat == DepthFormat.Depth16)
-				{
-					depthSize = 16;
-					stencilSize = 0;
-				}
-				else if (windowDepthFormat == DepthFormat.Depth24)
-				{
-					depthSize = 24;
-					stencilSize = 0;
-				}
-				else if (windowDepthFormat == DepthFormat.Depth24Stencil8)
-				{
-					depthSize = 24;
-					stencilSize = 8;
-				}
-			}
-
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_RED_SIZE, 8);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_GREEN_SIZE, 8);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_BLUE_SIZE, 8);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_ALPHA_SIZE, 8);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_DEPTH_SIZE, depthSize);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_STENCIL_SIZE, stencilSize);
-			SDL.SDL_GL_SetAttribute(SDL.SDL_GLattr.SDL_GL_DOUBLEBUFFER, 1);
-			if (forceES3)
-			{
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_RETAINED_BACKING,
-					0
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_ACCELERATED_VISUAL,
-					1
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION,
-					3
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION,
-					0
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
-					(int) SDL.SDL_GLprofile.SDL_GL_CONTEXT_PROFILE_ES
-				);
-			}
-			else if (forceCoreProfile)
-			{
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION,
-					4
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION,
-					6
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
-					(int) SDL.SDL_GLprofile.SDL_GL_CONTEXT_PROFILE_CORE
-				);
-			}
-			else if (forceCompatProfile)
-			{
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MAJOR_VERSION,
-					2
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_MINOR_VERSION,
-					1
-				);
-				SDL.SDL_GL_SetAttribute(
-					SDL.SDL_GLattr.SDL_GL_CONTEXT_PROFILE_MASK,
-					(int) SDL.SDL_GLprofile.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY
-				);
-			}
-#if DEBUG
-			SDL.SDL_GL_SetAttribute(
-				SDL.SDL_GLattr.SDL_GL_CONTEXT_FLAGS,
-				(int) SDL.SDL_GLcontext.SDL_GL_CONTEXT_DEBUG_FLAG
-			);
-#endif
-			return true;
-		}
-
 		public static GameWindow CreateWindow()
 		{
 			// Set and initialize the SDL2 window
@@ -496,39 +320,7 @@ namespace Microsoft.Xna.Framework
 				SDL.SDL_WindowFlags.SDL_WINDOW_HIDDEN |
 				SDL.SDL_WindowFlags.SDL_WINDOW_INPUT_FOCUS |
 				SDL.SDL_WindowFlags.SDL_WINDOW_MOUSE_FOCUS
-			);
-
-			// Did the user force a particular GLDevice?
-			ForcedGLDevice = Environment.GetEnvironmentVariable(
-				"FNA_GRAPHICS_FORCE_GLDEVICE"
-			);
-
-			bool vulkan = false, metal = false, opengl = false;
-			if (vulkan = PrepareVKAttributes())
-			{
-				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN;
-				ActualGLDevice = VULKAN;
-			}
-			else if (metal = PrepareMTLAttributes())
-			{
-				SDL.SDL_SetHint(SDL.SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
-
-				// Metal doesn't require a window flag
-				ActualGLDevice = METAL;
-			}
-			else if (opengl = PrepareGLAttributes())
-			{
-				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL;
-				if (	ForcedGLDevice == MODERNGL ||
-					ForcedGLDevice == THREADEDGL	)
-				{
-					ActualGLDevice = ForcedGLDevice;
-				}
-				else
-				{
-					ActualGLDevice = OPENGL;
-				}
-			}
+			) | (SDL.SDL_WindowFlags) FNA3D.FNA3D_PrepareWindowAttributes();
 
 			if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
 			{
@@ -567,44 +359,12 @@ namespace Microsoft.Xna.Framework
 			// We hide the mouse cursor by default.
 			OnIsMouseVisibleChanged(false);
 
-			/* When using OpenGL, iOS and tvOS require
-			 * an active GL context to get the drawable
-			 * size of the screen.
-			 *
-			 * When using Metal, all Apple platforms
-			 * require a view to get the drawable size.
-			 */
-			IntPtr tempContext = IntPtr.Zero;
-			if (opengl && (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS")))
-			{
-				tempContext = SDL.SDL_GL_CreateContext(window);
-			}
-			else if (metal)
-			{
-				tempContext = SDL.SDL_Metal_CreateView(window);
-			}
-
 			/* If high DPI is not found, unset the HIGHDPI var.
 			 * This is our way to communicate that it failed...
 			 * -flibit
 			 */
 			int drawX, drawY;
-			if (vulkan)
-			{
-				SDL.SDL_Vulkan_GetDrawableSize(window, out drawX, out drawY);
-			}
-			else if (metal)
-			{
-				MetalDevice.GetDrawableSizeFromView(tempContext, out drawX, out drawY);
-			}
-			else if (opengl)
-			{
-				SDL.SDL_GL_GetDrawableSize(window, out drawX, out drawY);
-			}
-			else
-			{
-				throw new InvalidOperationException("DirectX? Glide? What?");
-			}
+			FNA3D.FNA3D_GetDrawableSize(window, out drawX, out drawY);
 			if (	drawX == GraphicsDeviceManager.DefaultBackBufferWidth &&
 				drawY == GraphicsDeviceManager.DefaultBackBufferHeight	)
 			{
@@ -615,19 +375,6 @@ namespace Microsoft.Xna.Framework
 				// Store the full retina resolution of the display
 				RetinaWidth = drawX;
 				RetinaHeight = drawY;
-			}
-
-			// We're done with that temporary context.
-			if (tempContext != IntPtr.Zero)
-			{
-				if (opengl)
-				{
-					SDL.SDL_GL_DeleteContext(tempContext);
-				}
-				else if (metal)
-				{
-					SDL.SDL_Metal_DestroyView(tempContext);
-				}
 			}
 
 			return new FNAWindow(
@@ -709,6 +456,7 @@ namespace Microsoft.Xna.Framework
 				}
 				if (resize)
 				{
+					SDL.SDL_RestoreWindow(window);
 					SDL.SDL_SetWindowSize(window, clientWidth, clientHeight);
 					center = true;
 				}
@@ -765,6 +513,14 @@ namespace Microsoft.Xna.Framework
 					window,
 					(uint) SDL.SDL_WindowFlags.SDL_WINDOW_FULLSCREEN_DESKTOP
 				);
+			}
+
+			// Update the mouse window bounds
+			if (Mouse.WindowHandle == window)
+			{
+				Rectangle b = GetWindowBounds(window);
+				Mouse.INTERNAL_WindowWidth = b.Width;
+				Mouse.INTERNAL_WindowHeight = b.Height;
 			}
 		}
 
@@ -859,9 +615,31 @@ namespace Microsoft.Xna.Framework
 				fileIn = INTERNAL_GetIconName(title + ".png");
 				if (!String.IsNullOrEmpty(fileIn))
 				{
-					IntPtr icon = SDL_image.IMG_Load(fileIn);
+					int w, h, len;
+					IntPtr pixels, icon;
+					using (Stream stream = TitleContainer.OpenStream(fileIn))
+					{
+						pixels = FNA3D.ReadImageStream(
+							stream,
+							out w,
+							out h,
+							out len
+						);
+						icon = SDL.SDL_CreateRGBSurfaceFrom(
+							pixels,
+							w,
+							h,
+							8 * 4,
+							w * 4,
+							0x000000FF,
+							0x0000FF00,
+							0x00FF0000,
+							0xFF000000
+						);
+					}
 					SDL.SDL_SetWindowIcon(window, icon);
 					SDL.SDL_FreeSurface(icon);
+					FNA3D.FNA3D_Image_Free(pixels);
 					return;
 				}
 			}
@@ -1003,414 +781,388 @@ namespace Microsoft.Xna.Framework
 
 		#region Event Loop
 
-		public static void RunLoop(Game game)
+		public static GraphicsAdapter RegisterGame(Game game)
 		{
 			SDL.SDL_ShowWindow(game.Window.Handle);
-			game.IsActive = true;
 
-			Rectangle windowBounds = game.Window.ClientBounds;
-			Mouse.INTERNAL_WindowWidth = windowBounds.Width;
-			Mouse.INTERNAL_WindowHeight = windowBounds.Height;
+			// Store this for internal event filter work
+			activeGames.Add(game);
 
 			// Which display did we end up on?
 			int displayIndex = SDL.SDL_GetWindowDisplayIndex(
 				game.Window.Handle
 			);
+			return GraphicsAdapter.Adapters[displayIndex];
+		}
 
-			// Store this for internal event filter work
-			activeGames.Add(game);
+		public static void UnregisterGame(Game game)
+		{
+			activeGames.Remove(game);
+		}
 
-			// OSX has some fancy fullscreen features, let's use them!
-			bool osxUseSpaces;
-			if (OSVersion.Equals("Mac OS X"))
+		public static void PollEvents(
+			Game game,
+			ref GraphicsAdapter currentAdapter,
+			bool[] textInputControlDown,
+			int[] textInputControlRepeat,
+			ref bool textInputSuppress
+		) {
+			SDL.SDL_Event evt;
+			while (SDL.SDL_PollEvent(out evt) == 1)
 			{
-				string hint = SDL.SDL_GetHint(SDL.SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES);
-				osxUseSpaces = (String.IsNullOrEmpty(hint) || hint.Equals("1"));
+				// Keyboard
+				if (evt.type == SDL.SDL_EventType.SDL_KEYDOWN)
+				{
+					Keys key = ToXNAKey(ref evt.key.keysym);
+					if (!Keyboard.keys.Contains(key))
+					{
+						Keyboard.keys.Add(key);
+						int textIndex;
+						if (FNAPlatform.TextInputBindings.TryGetValue(key, out textIndex))
+						{
+							textInputControlDown[textIndex] = true;
+							textInputControlRepeat[textIndex] = Environment.TickCount + 400;
+							TextInputEXT.OnTextInput(FNAPlatform.TextInputCharacters[textIndex]);
+						}
+						else if (Keyboard.keys.Contains(Keys.LeftControl) && key == Keys.V)
+						{
+							textInputControlDown[6] = true;
+							textInputControlRepeat[6] = Environment.TickCount + 400;
+							TextInputEXT.OnTextInput(FNAPlatform.TextInputCharacters[6]);
+							textInputSuppress = true;
+						}
+					}
+				}
+				else if (evt.type == SDL.SDL_EventType.SDL_KEYUP)
+				{
+					Keys key = ToXNAKey(ref evt.key.keysym);
+					if (Keyboard.keys.Remove(key))
+					{
+						int value;
+						if (FNAPlatform.TextInputBindings.TryGetValue(key, out value))
+						{
+							textInputControlDown[value] = false;
+						}
+						else if ((!Keyboard.keys.Contains(Keys.LeftControl) && textInputControlDown[3]) || key == Keys.V)
+						{
+							textInputControlDown[6] = false;
+							textInputSuppress = false;
+						}
+					}
+				}
+
+				// Mouse Input
+				else if (evt.type == SDL.SDL_EventType.SDL_MOUSEBUTTONDOWN)
+				{
+					Mouse.INTERNAL_onClicked(evt.button.button - 1);
+				}
+				else if (evt.type == SDL.SDL_EventType.SDL_MOUSEWHEEL)
+				{
+					// 120 units per notch. Because reasons.
+					Mouse.INTERNAL_MouseWheel += evt.wheel.y * 120;
+				}
+
+				// Touch Input
+				else if (evt.type == SDL.SDL_EventType.SDL_FINGERDOWN)
+				{
+					// Windows only notices a touch screen once it's touched
+					TouchPanel.TouchDeviceExists = true;
+
+					TouchPanel.INTERNAL_onTouchEvent(
+						(int) evt.tfinger.fingerId,
+						TouchLocationState.Pressed,
+						evt.tfinger.x,
+						evt.tfinger.y,
+						0,
+						0
+					);
+				}
+				else if (evt.type == SDL.SDL_EventType.SDL_FINGERMOTION)
+				{
+					TouchPanel.INTERNAL_onTouchEvent(
+						(int) evt.tfinger.fingerId,
+						TouchLocationState.Moved,
+						evt.tfinger.x,
+						evt.tfinger.y,
+						evt.tfinger.dx,
+						evt.tfinger.dy
+					);
+				}
+				else if (evt.type == SDL.SDL_EventType.SDL_FINGERUP)
+				{
+					TouchPanel.INTERNAL_onTouchEvent(
+						(int) evt.tfinger.fingerId,
+						TouchLocationState.Released,
+						evt.tfinger.x,
+						evt.tfinger.y,
+						0,
+						0
+					);
+				}
+
+				// Various Window Events...
+				else if (evt.type == SDL.SDL_EventType.SDL_WINDOWEVENT)
+				{
+					// Window Focus
+					if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_FOCUS_GAINED)
+					{
+						game.IsActive = true;
+
+						if (!OSXUseSpaces)
+						{
+							// If we alt-tab away, we lose the 'fullscreen desktop' flag on some WMs
+							SDL.SDL_SetWindowFullscreen(
+								game.Window.Handle,
+								game.GraphicsDevice.PresentationParameters.IsFullScreen ?
+									(uint) SDL.SDL_WindowFlags.SDL_WINDOW_FULLSCREEN_DESKTOP :
+									0
+							);
+						}
+
+						// Disable the screensaver when we're back.
+						SDL.SDL_DisableScreenSaver();
+					}
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_FOCUS_LOST)
+					{
+						game.IsActive = false;
+
+						if (!OSXUseSpaces)
+						{
+							SDL.SDL_SetWindowFullscreen(game.Window.Handle, 0);
+						}
+
+						// Give the screensaver back, we're not that important now.
+						SDL.SDL_EnableScreenSaver();
+					}
+
+					// Window Resize
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_SIZE_CHANGED)
+					{
+						// This is called on both API and WM resizes
+						Mouse.INTERNAL_WindowWidth = evt.window.data1;
+						Mouse.INTERNAL_WindowHeight = evt.window.data2;
+					}
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED)
+					{
+						/* This should be called on user resize only, NOT ApplyChanges!
+						 * Sadly some window managers are idiots and fire events anyway.
+						 * Also ignore any other "resizes" (alt-tab, fullscreen, etc.)
+						 * -flibit
+						 */
+						uint flags = SDL.SDL_GetWindowFlags(game.Window.Handle);
+						if (	(flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_RESIZABLE) != 0 &&
+							(flags & (uint) SDL.SDL_WindowFlags.SDL_WINDOW_INPUT_FOCUS) != 0	)
+						{
+							((FNAWindow) game.Window).INTERNAL_ClientSizeChanged();
+						}
+					}
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_EXPOSED)
+					{
+						// This is typically called when the window is made bigger
+						game.RedrawWindow();
+					}
+
+					// Window Move
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_MOVED)
+					{
+						/* Apparently if you move the window to a new
+						 * display, a GraphicsDevice Reset occurs.
+						 * -flibit
+						 */
+						int newIndex = SDL.SDL_GetWindowDisplayIndex(
+							game.Window.Handle
+						);
+						if (GraphicsAdapter.Adapters[newIndex] != currentAdapter)
+						{
+							currentAdapter = GraphicsAdapter.Adapters[newIndex];
+							game.GraphicsDevice.Reset(
+								game.GraphicsDevice.PresentationParameters,
+								currentAdapter
+							);
+						}
+					}
+
+					// Mouse Focus
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_ENTER)
+					{
+						SDL.SDL_DisableScreenSaver();
+					}
+					else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_LEAVE)
+					{
+						SDL.SDL_EnableScreenSaver();
+					}
+				}
+
+				// Display Events
+				else if (evt.type == SDL.SDL_EventType.SDL_DISPLAYEVENT)
+				{
+					GraphicsAdapter.AdaptersChanged();
+
+					int displayIndex = SDL.SDL_GetWindowDisplayIndex(
+						game.Window.Handle
+					);
+					currentAdapter = GraphicsAdapter.Adapters[displayIndex];
+
+					// Orientation Change
+					if (evt.display.displayEvent == SDL.SDL_DisplayEventID.SDL_DISPLAYEVENT_ORIENTATION)
+					{
+						DisplayOrientation orientation = INTERNAL_ConvertOrientation(
+							(SDL.SDL_DisplayOrientation) evt.display.data1
+						);
+
+						INTERNAL_HandleOrientationChange(
+							orientation,
+							game.GraphicsDevice,
+							(FNAWindow) game.Window
+						);
+					}
+				}
+
+				// Controller device management
+				else if (evt.type == SDL.SDL_EventType.SDL_CONTROLLERDEVICEADDED)
+				{
+					INTERNAL_AddInstance(evt.cdevice.which);
+				}
+				else if (evt.type == SDL.SDL_EventType.SDL_CONTROLLERDEVICEREMOVED)
+				{
+					INTERNAL_RemoveInstance(evt.cdevice.which);
+				}
+
+				// Text Input
+				else if (evt.type == SDL.SDL_EventType.SDL_TEXTINPUT && !textInputSuppress)
+				{
+					// Based on the SDL2# LPUtf8StrMarshaler
+					unsafe
+					{
+						int bytes = MeasureStringLength(evt.text.text);
+						if (bytes > 0) 
+						{
+							/* UTF8 will never encode more characters
+							 * than bytes in a string, so bytes is a
+							 * suitable upper estimate of size needed
+							 */
+							char* charsBuffer = stackalloc char[bytes];
+							int chars = Encoding.UTF8.GetChars(
+								evt.text.text,
+								bytes,
+								charsBuffer,
+								bytes
+							);
+
+							for (int i = 0; i < chars; i += 1)
+							{
+								TextInputEXT.OnTextInput(charsBuffer[i]);
+							}
+						}
+					}
+				}
+
+				else if (evt.type == SDL.SDL_EventType.SDL_TEXTEDITING) 
+				{
+					unsafe 
+					{
+						int bytes = MeasureStringLength(evt.edit.text);
+						if (bytes > 0) 
+						{
+							char* charsBuffer = stackalloc char[bytes];
+							int chars = Encoding.UTF8.GetChars(
+								evt.edit.text,
+								bytes,
+								charsBuffer,
+								bytes
+							);
+							string text = new string(charsBuffer, 0, chars);
+							TextInputEXT.OnTextEditing(text, evt.edit.start, evt.edit.length);
+						} 
+						else 
+						{
+							TextInputEXT.OnTextEditing(null, 0, 0);
+						}
+					}
+				}
+
+				// Quit
+				else if (evt.type == SDL.SDL_EventType.SDL_QUIT)
+				{
+					game.RunApplication = false;
+					break;
+				}
+			}
+			// Text Input Controls Key Handling
+			for (int i = 0; i < FNAPlatform.TextInputCharacters.Length; i += 1)
+			{
+				if (textInputControlDown[i] && textInputControlRepeat[i] <= Environment.TickCount)
+				{
+					TextInputEXT.OnTextInput(FNAPlatform.TextInputCharacters[i]);
+				}
+			}
+
+			// Wine change!
+			if (forms[game.Window.Handle].IsClosed)
+			{
+				game.RunApplication = false;
+			}
+		}
+
+		private unsafe static int MeasureStringLength(byte* ptr)
+		{
+			int bytes;
+			for (bytes = 0; *ptr != 0; ptr += 1, bytes += 1);
+			return bytes;
+		}
+
+		public static bool NeedsPlatformMainLoop()
+		{
+			return SDL.SDL_GetPlatform().Equals("Emscripten");
+		}
+
+		public static void RunPlatformMainLoop(Game game)
+		{
+			if (SDL.SDL_GetPlatform().Equals("Emscripten"))
+			{
+				emscriptenGame = game;
+				emscripten_set_main_loop(
+					RunEmscriptenMainLoop,
+					0,
+					1
+				);
 			}
 			else
 			{
-				osxUseSpaces = false;
+				throw new NotSupportedException(
+					"Cannot run the main loop of an unknown platform"
+				);
 			}
-
-			// Perform initial check for a touch device
-			TouchPanel.TouchDeviceExists = GetTouchCapabilities().IsConnected;
-
-			// Do we want to read keycodes or scancodes?
-			if (UseScancodes)
-			{
-				FNALoggerEXT.LogInfo("Using scancodes instead of keycodes!");
-			}
-
-			// Active Key List
-			List<Keys> keys = new List<Keys>();
-
-			/* Setup Text Input Control Character Arrays
-			 * (Only 7 control keys supported at this time)
-			 */
-			char[] textInputCharacters = new char[]
-			{
-				(char) 2,	// Home
-				(char) 3,	// End
-				(char) 8,	// Backspace
-				(char) 9,	// Tab
-				(char) 13,	// Enter
-				(char) 127,	// Delete
-				(char) 22	// Ctrl+V (Paste)
-			};
-			Dictionary<Keys, int> textInputBindings = new Dictionary<Keys, int>()
-			{
-				{ Keys.Home,	0 },
-				{ Keys.End,	1 },
-				{ Keys.Back,	2 },
-				{ Keys.Tab,	3 },
-				{ Keys.Enter,	4 },
-				{ Keys.Delete,	5 }
-				// Ctrl+V is special!
-			};
-			bool[] textInputControlDown = new bool[textInputCharacters.Length];
-			int[] textInputControlRepeat = new int[textInputCharacters.Length];
-			bool textInputSuppress = false;
-
-			SDL.SDL_Event evt;
-
-			while (game.RunApplication)
-			{
-				while (SDL.SDL_PollEvent(out evt) == 1)
-				{
-					// Keyboard
-					if (evt.type == SDL.SDL_EventType.SDL_KEYDOWN)
-					{
-						Keys key = ToXNAKey(ref evt.key.keysym);
-						if (!keys.Contains(key))
-						{
-							keys.Add(key);
-							int textIndex;
-							if (textInputBindings.TryGetValue(key, out textIndex))
-							{
-								textInputControlDown[textIndex] = true;
-								textInputControlRepeat[textIndex] = Environment.TickCount + 400;
-								TextInputEXT.OnTextInput(textInputCharacters[textIndex]);
-							}
-							else if (keys.Contains(Keys.LeftControl) && key == Keys.V)
-							{
-								textInputControlDown[6] = true;
-								textInputControlRepeat[6] = Environment.TickCount + 400;
-								TextInputEXT.OnTextInput(textInputCharacters[6]);
-								textInputSuppress = true;
-							}
-						}
-					}
-					else if (evt.type == SDL.SDL_EventType.SDL_KEYUP)
-					{
-						Keys key = ToXNAKey(ref evt.key.keysym);
-						if (keys.Remove(key))
-						{
-							int value;
-							if (textInputBindings.TryGetValue(key, out value))
-							{
-								textInputControlDown[value] = false;
-							}
-							else if ((!keys.Contains(Keys.LeftControl) && textInputControlDown[3]) || key == Keys.V)
-							{
-								textInputControlDown[6] = false;
-								textInputSuppress = false;
-							}
-						}
-					}
-
-					// Mouse Input
-					else if (evt.type == SDL.SDL_EventType.SDL_MOUSEBUTTONDOWN)
-					{
-						Mouse.INTERNAL_onClicked(evt.button.button - 1);
-					}
-					else if (evt.type == SDL.SDL_EventType.SDL_MOUSEWHEEL)
-					{
-						// 120 units per notch. Because reasons.
-						Mouse.INTERNAL_MouseWheel += evt.wheel.y * 120;
-					}
-
-					// Touch Input
-					else if (evt.type == SDL.SDL_EventType.SDL_FINGERDOWN)
-					{
-						// Windows only notices a touch screen once it's touched
-						TouchPanel.TouchDeviceExists = true;
-
-						TouchPanel.INTERNAL_onTouchEvent(
-							(int) evt.tfinger.fingerId,
-							TouchLocationState.Pressed,
-							evt.tfinger.x,
-							evt.tfinger.y,
-							0,
-							0
-						);
-					}
-					else if (evt.type == SDL.SDL_EventType.SDL_FINGERMOTION)
-					{
-						TouchPanel.INTERNAL_onTouchEvent(
-							(int) evt.tfinger.fingerId,
-							TouchLocationState.Moved,
-							evt.tfinger.x,
-							evt.tfinger.y,
-							evt.tfinger.dx,
-							evt.tfinger.dy
-						);
-					}
-					else if (evt.type == SDL.SDL_EventType.SDL_FINGERUP)
-					{
-						TouchPanel.INTERNAL_onTouchEvent(
-							(int) evt.tfinger.fingerId,
-							TouchLocationState.Released,
-							evt.tfinger.x,
-							evt.tfinger.y,
-							0,
-							0
-						);
-					}
-
-					// Various Window Events...
-					else if (evt.type == SDL.SDL_EventType.SDL_WINDOWEVENT)
-					{
-						// Window Focus
-						if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_FOCUS_GAINED)
-						{
-							game.IsActive = true;
-
-							if (!osxUseSpaces)
-							{
-								// If we alt-tab away, we lose the 'fullscreen desktop' flag on some WMs
-								SDL.SDL_SetWindowFullscreen(
-									game.Window.Handle,
-									game.GraphicsDevice.PresentationParameters.IsFullScreen ?
-										(uint) SDL.SDL_WindowFlags.SDL_WINDOW_FULLSCREEN_DESKTOP :
-										0
-								);
-							}
-
-							// Disable the screensaver when we're back.
-							SDL.SDL_DisableScreenSaver();
-						}
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_FOCUS_LOST)
-						{
-							game.IsActive = false;
-
-							if (!osxUseSpaces)
-							{
-								SDL.SDL_SetWindowFullscreen(game.Window.Handle, 0);
-							}
-
-							// Give the screensaver back, we're not that important now.
-							SDL.SDL_EnableScreenSaver();
-						}
-
-						// Window Resize
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_SIZE_CHANGED)
-						{
-							// This is called on both API and WM resizes
-							Mouse.INTERNAL_WindowWidth = evt.window.data1;
-							Mouse.INTERNAL_WindowHeight = evt.window.data2;
-						}
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED)
-						{
-							/* This should be called on user resize only, NOT ApplyChanges!
-							 * Sadly some window managers are idiots and fire events anyway.
-							 * Also ignore any other "resizes" (alt-tab, fullscreen, etc.)
-							 * -flibit
-							 */
-							if (GetWindowResizable(game.Window.Handle))
-							{
-								((FNAWindow) game.Window).INTERNAL_ClientSizeChanged();
-							}
-						}
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_EXPOSED)
-						{
-							// This is typically called when the window is made bigger
-							game.RedrawWindow();
-						}
-
-						// Window Move
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_MOVED)
-						{
-							/* Apparently if you move the window to a new
-							 * display, a GraphicsDevice Reset occurs.
-							 * -flibit
-							 */
-							int newIndex = SDL.SDL_GetWindowDisplayIndex(
-								game.Window.Handle
-							);
-							if (newIndex != displayIndex)
-							{
-								displayIndex = newIndex;
-								game.GraphicsDevice.Reset(
-									game.GraphicsDevice.PresentationParameters,
-									GraphicsAdapter.Adapters[displayIndex]
-								);
-							}
-						}
-
-						// Mouse Focus
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_ENTER)
-						{
-							SDL.SDL_DisableScreenSaver();
-						}
-						else if (evt.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_LEAVE)
-						{
-							SDL.SDL_EnableScreenSaver();
-						}
-					}
-
-					// Display Events
-					else if (evt.type == SDL.SDL_EventType.SDL_DISPLAYEVENT)
-					{
-						// Orientation Change
-						if (evt.display.displayEvent == SDL.SDL_DisplayEventID.SDL_DISPLAYEVENT_ORIENTATION)
-						{
-							DisplayOrientation orientation = INTERNAL_ConvertOrientation(
-								(SDL.SDL_DisplayOrientation) evt.display.data1
-							);
-
-							INTERNAL_HandleOrientationChange(
-								orientation,
-								game.GraphicsDevice,
-								(FNAWindow) game.Window
-							);
-						}
-					}
-
-					// Controller device management
-					else if (evt.type == SDL.SDL_EventType.SDL_CONTROLLERDEVICEADDED)
-					{
-						INTERNAL_AddInstance(evt.cdevice.which);
-					}
-					else if (evt.type == SDL.SDL_EventType.SDL_CONTROLLERDEVICEREMOVED)
-					{
-						INTERNAL_RemoveInstance(evt.cdevice.which);
-					}
-
-					// Text Input
-					else if (evt.type == SDL.SDL_EventType.SDL_TEXTINPUT && !textInputSuppress)
-					{
-						// Based on the SDL2# LPUtf8StrMarshaler
-						unsafe
-						{
-							byte* endPtr = evt.text.text;
-							if (*endPtr != 0)
-							{
-								int bytes = 0;
-								while (*endPtr != 0)
-								{
-									endPtr++;
-									bytes += 1;
-								}
-
-								/* UTF8 will never encode more characters
-								 * than bytes in a string, so bytes is a
-								 * suitable upper estimate of size needed
-								 */
-								char* charsBuffer = stackalloc char[bytes];
-								int chars = Encoding.UTF8.GetChars(
-									evt.text.text,
-									bytes,
-									charsBuffer,
-									bytes
-								);
-
-								for (int i = 0; i < chars; i += 1)
-								{
-									TextInputEXT.OnTextInput(charsBuffer[i]);
-								}
-							}
-						}
-					}
-
-					// Quit
-					else if (evt.type == SDL.SDL_EventType.SDL_QUIT)
-					{
-						game.RunApplication = false;
-						break;
-					}
-				}
-				// Text Input Controls Key Handling
-				for (int i = 0; i < textInputCharacters.Length; i += 1)
-				{
-					if (textInputControlDown[i] && textInputControlRepeat[i] <= Environment.TickCount)
-					{
-						TextInputEXT.OnTextInput(textInputCharacters[i]);
-					}
-				}
-
-				Keyboard.SetKeys(keys);
-				game.Tick();
-
-				// Wine change!
-				if (forms[game.Window.Handle].IsClosed)
-				{
-					game.RunApplication = false;
-				}
-			}
-
-			// Okay, we don't care about the events anymore
-			activeGames.Remove(game);
-
-			// We out.
-			game.Exit();
 		}
 
 		#endregion
 
-		#region IGL/IAL Methods
+		#region Emscripten Main Loop
 
-		public static IGLDevice CreateGLDevice(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
-			if (string.IsNullOrEmpty(ActualGLDevice))
-			{
-				/* This may be a GraphicsDevice with no Game.
-				 * in that case, try this var one last time.
-				 */
-				ActualGLDevice = Environment.GetEnvironmentVariable(
-					"FNA_GRAPHICS_FORCE_GLDEVICE"
-				);
-				if (string.IsNullOrEmpty(ActualGLDevice))
-				{
-					// No device requested at all? Try to guess.
-					SDL.SDL_WindowFlags flags = (SDL.SDL_WindowFlags) SDL.SDL_GetWindowFlags(
-						presentationParameters.DeviceWindowHandle
-					);
-					if ((flags & SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN) == SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN)
-					{
-						ActualGLDevice = VULKAN;
-					}
-					else if ((flags & SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL) == SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL)
-					{
-						ActualGLDevice = OPENGL;
-					}
-					else if (	OSVersion.Equals("Mac OS X") ||
-							OSVersion.Equals("iOS") ||
-							OSVersion.Equals("tvOS")	)
-					{
-						ActualGLDevice = METAL;
-					}
-				}
-			}
+		private static Game emscriptenGame;
+		private delegate void em_callback_func();
 
-			switch (ActualGLDevice)
+		[DllImport("emscripten", CallingConvention = CallingConvention.Cdecl)]
+		private static extern void emscripten_set_main_loop(
+			em_callback_func func,
+			int fps,
+			int simulate_infinite_loop
+		);
+
+		[DllImport("emscripten", CallingConvention = CallingConvention.Cdecl)]
+		private static extern void emscripten_cancel_main_loop();
+
+		[ObjCRuntime.MonoPInvokeCallback(typeof(em_callback_func))]
+		private static void RunEmscriptenMainLoop()
+		{
+			emscriptenGame.RunOneFrame();
+
+			// FIXME: Is this even needed...?
+			if (!emscriptenGame.RunApplication)
 			{
-			case VULKAN:	break; // Maybe some day!
-			case METAL:
-				return new MetalDevice(presentationParameters);
-			case MODERNGL:
-				// FIXME: This is still experimental! -flibit
-				return new ModernGLDevice(presentationParameters);
-			case THREADEDGL:
-				// FIXME: This is still experimental! -flibit
-				return new ThreadedGLDevice(presentationParameters);
-			case OPENGL:
-				return new OpenGLDevice(presentationParameters);
+				emscriptenGame.Exit();
+				emscripten_cancel_main_loop();
 			}
-			throw new NotSupportedException(
-				"The requested GLDevice is not present!"
-			);
 		}
 
 		#endregion
@@ -1754,510 +1506,6 @@ namespace Microsoft.Xna.Framework
 				message ?? "",
 				IntPtr.Zero
 			);
-		}
-
-		#endregion
-
-		#region Image I/O Methods
-
-		private static IntPtr TextureDataFromStreamInternal(
-			Stream stream,
-			int reqWidth,
-			int reqHeight,
-			bool zoom
-		) {
-			// Load the SDL_Surface* from RWops, get the image data
-			IntPtr surface = SDL_image.IMG_Load_RW(
-				FakeRWops.Alloc(stream),
-				1
-			);
-			if (surface == IntPtr.Zero)
-			{
-				// File not found, supported, etc.
-				FNALoggerEXT.LogError(
-					"TextureDataFromStream: " +
-					SDL.SDL_GetError()
-				);
-				return IntPtr.Zero;
-			}
-			surface = INTERNAL_convertSurfaceFormat(surface);
-
-			// Image scaling, if applicable
-			if (reqWidth != -1 && reqHeight != -1)
-			{
-				// Get the file surface dimensions now...
-				int rw;
-				int rh;
-				unsafe
-				{
-					SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
-					rw = surPtr->w;
-					rh = surPtr->h;
-				}
-
-				// Calculate the image scale factor
-				bool scaleWidth;
-				if (zoom)
-				{
-					scaleWidth = rw < rh;
-				}
-				else
-				{
-					scaleWidth = rw > rh;
-				}
-				float scale;
-				if (scaleWidth)
-				{
-					scale = reqWidth / (float) rw;
-				}
-				else
-				{
-					scale = reqHeight / (float) rh;
-				}
-
-				// Calculate the scaled image size, crop if zoomed
-				int resultWidth;
-				int resultHeight;
-				SDL.SDL_Rect crop = new SDL.SDL_Rect();
-				if (zoom)
-				{
-					resultWidth = reqWidth;
-					resultHeight = reqHeight;
-					if (scaleWidth)
-					{
-						crop.x = 0;
-						crop.w = rw;
-						crop.y = (int) (rh / 2 - (reqHeight / scale) / 2);
-						crop.h = (int) (reqHeight / scale);
-					}
-					else
-					{
-						crop.y = 0;
-						crop.h = rh;
-						crop.x = (int) (rw / 2 - (reqWidth / scale) / 2);
-						crop.w = (int) (reqWidth / scale);
-					}
-				}
-				else
-				{
-					resultWidth = (int) (rw * scale);
-					resultHeight = (int) (rh * scale);
-				}
-
-				// Alloc surface, blit!
-				IntPtr newSurface = SDL.SDL_CreateRGBSurface(
-					0,
-					resultWidth,
-					resultHeight,
-					32,
-					0x000000FF,
-					0x0000FF00,
-					0x00FF0000,
-					0xFF000000
-				);
-				SDL.SDL_SetSurfaceBlendMode(
-					surface,
-					SDL.SDL_BlendMode.SDL_BLENDMODE_NONE
-				);
-				if (zoom)
-				{
-					SDL.SDL_BlitScaled(
-						surface,
-						ref crop,
-						newSurface,
-						IntPtr.Zero
-					);
-				}
-				else
-				{
-					SDL.SDL_BlitScaled(
-						surface,
-						IntPtr.Zero,
-						newSurface,
-						IntPtr.Zero
-					);
-				}
-				SDL.SDL_FreeSurface(surface);
-				surface = newSurface;
-			}
-
-			return surface;
-		}
-
-		private static unsafe void TextureDataClearAlpha(
-			byte* pixels,
-			int len
-		) {
-			/* Ensure that the alpha pixels are... well, actual alpha.
-			 * You think this looks stupid, but be assured: Your paint program is
-			 * almost certainly even stupider.
-			 * -flibit
-			 */
-			for (int i = 0; i < len; i += 4, pixels += 4)
-			{
-				if (pixels[3] == 0)
-				{
-					pixels[0] = 0;
-					pixels[1] = 0;
-					pixels[2] = 0;
-				}
-			}
-		}
-
-		public static void TextureDataFromStream(
-			Stream stream,
-			out int width,
-			out int height,
-			out byte[] pixels,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
-		) {
-			IntPtr surface = TextureDataFromStreamInternal(
-				stream,
-				reqWidth,
-				reqHeight,
-				zoom
-			);
-			if (surface == IntPtr.Zero)
-			{
-				width = 0;
-				height = 0;
-				pixels = null;
-				return;
-			}
-
-			// Copy surface data to output managed byte array
-			unsafe
-			{
-				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
-				width = surPtr->w;
-				height = surPtr->h;
-				pixels = new byte[width * height * 4]; // MUST be SurfaceFormat.Color!
-
-				Marshal.Copy(surPtr->pixels, pixels, 0, pixels.Length);
-				fixed (byte* pixPtr = &pixels[0])
-				{
-					TextureDataClearAlpha(pixPtr, pixels.Length);
-				}
-			}
-			SDL.SDL_FreeSurface(surface);
-		}
-
-		public static void TextureDataFromStreamPtr(
-			Stream stream,
-			out int width,
-			out int height,
-			out IntPtr pixels,
-			out int len,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
-		) {
-			IntPtr surface = TextureDataFromStreamInternal(
-				stream,
-				reqWidth,
-				reqHeight,
-				zoom
-			);
-			if (surface == IntPtr.Zero)
-			{
-				width = 0;
-				height = 0;
-				pixels = IntPtr.Zero;
-				len = 0;
-				return;
-			}
-
-			// Copy surface data to output managed byte array
-			unsafe
-			{
-				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
-				width = surPtr->w;
-				height = surPtr->h;
-				len = width * height * 4;
-				pixels = Marshal.AllocHGlobal(len); // MUST be SurfaceFormat.Color!
-
-				SDL.SDL_memcpy(pixels, surPtr->pixels, (IntPtr) len);
-				TextureDataClearAlpha((byte*) pixels, len);
-			}
-			SDL.SDL_FreeSurface(surface);
-		}
-
-		public static void SavePNG(
-			Stream stream,
-			int width,
-			int height,
-			int imgWidth,
-			int imgHeight,
-			byte[] data
-		) {
-			IntPtr surface = INTERNAL_getScaledSurface(
-				data,
-				imgWidth,
-				imgHeight,
-				width,
-				height
-			);
-			SDL_image.IMG_SavePNG_RW(
-				surface,
-				FakeRWops.Alloc(stream),
-				1
-			);
-			SDL.SDL_FreeSurface(surface);
-		}
-
-		public static void SaveJPG(
-			Stream stream,
-			int width,
-			int height,
-			int imgWidth,
-			int imgHeight,
-			byte[] data
-		) {
-			// FIXME: What does XNA pick for this? -flibit
-			const int quality = 100;
-
-			IntPtr surface = INTERNAL_getScaledSurface(
-				data,
-				imgWidth,
-				imgHeight,
-				width,
-				height
-			);
-
-			// FIXME: Hack for Bugzilla #3972
-			IntPtr temp = SDL.SDL_ConvertSurfaceFormat(
-				surface,
-				SDL.SDL_PIXELFORMAT_RGB24,
-				0
-			);
-			SDL.SDL_FreeSurface(surface);
-			surface = temp;
-
-			SDL_image.IMG_SaveJPG_RW(
-				surface,
-				FakeRWops.Alloc(stream),
-				1,
-				quality
-			);
-			SDL.SDL_FreeSurface(surface);
-		}
-
-		public static IntPtr INTERNAL_getScaledSurface(
-			byte[] data,
-			int srcW,
-			int srcH,
-			int dstW,
-			int dstH
-		) {
-			// Create an SDL_Surface*, write the pixel data
-			IntPtr surface = SDL.SDL_CreateRGBSurface(
-				0,
-				srcW,
-				srcH,
-				32,
-				0x000000FF,
-				0x0000FF00,
-				0x00FF0000,
-				0xFF000000
-			);
-			SDL.SDL_LockSurface(surface);
-			unsafe
-			{
-				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
-				Marshal.Copy(
-					data,
-					0,
-					surPtr->pixels,
-					data.Length
-				);
-			}
-			SDL.SDL_UnlockSurface(surface);
-
-			// Blit to a scaled surface of the size we want, if needed.
-			if (srcW != dstW || srcH != dstH)
-			{
-				IntPtr scaledSurface = SDL.SDL_CreateRGBSurface(
-					0,
-					dstW,
-					dstH,
-					32,
-					0x000000FF,
-					0x0000FF00,
-					0x00FF0000,
-					0xFF000000
-				);
-				SDL.SDL_SetSurfaceBlendMode(
-					surface,
-					SDL.SDL_BlendMode.SDL_BLENDMODE_NONE
-				);
-				SDL.SDL_BlitScaled(
-					surface,
-					IntPtr.Zero,
-					scaledSurface,
-					IntPtr.Zero
-				);
-				SDL.SDL_FreeSurface(surface);
-				surface = scaledSurface;
-			}
-
-			return surface;
-		}
-
-		private static unsafe IntPtr INTERNAL_convertSurfaceFormat(IntPtr surface)
-		{
-			IntPtr result = surface;
-			unsafe
-			{
-				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
-				SDL.SDL_PixelFormat* pixelFormatPtr = (SDL.SDL_PixelFormat*) surPtr->format;
-
-				// SurfaceFormat.Color is SDL_PIXELFORMAT_ABGR8888
-				if (pixelFormatPtr->format != SDL.SDL_PIXELFORMAT_ABGR8888)
-				{
-					// Create a properly formatted copy, free the old surface
-					result = SDL.SDL_ConvertSurfaceFormat(surface, SDL.SDL_PIXELFORMAT_ABGR8888, 0);
-					SDL.SDL_FreeSurface(surface);
-				}
-			}
-			return result;
-		}
-
-		private static class FakeRWops
-		{
-			private static readonly Dictionary<IntPtr, Stream> streamMap =
-				new Dictionary<IntPtr, Stream>();
-
-			// Based on PNG_ZBUF_SIZE default
-			private static byte[] temp = new byte[8192];
-
-			private static readonly SDL.SDLRWopsSizeCallback sizeFunc = size;
-			private static readonly SDL.SDLRWopsSeekCallback seekFunc = seek;
-			private static readonly SDL.SDLRWopsReadCallback readFunc = read;
-			private static readonly SDL.SDLRWopsWriteCallback writeFunc = write;
-			private static readonly SDL.SDLRWopsCloseCallback closeFunc = close;
-			private static readonly IntPtr sizePtr =
-				Marshal.GetFunctionPointerForDelegate(sizeFunc);
-			private static readonly IntPtr seekPtr =
-				Marshal.GetFunctionPointerForDelegate(seekFunc);
-			private static readonly IntPtr readPtr =
-				Marshal.GetFunctionPointerForDelegate(readFunc);
-			private static readonly IntPtr writePtr =
-				Marshal.GetFunctionPointerForDelegate(writeFunc);
-			private static readonly IntPtr closePtr =
-				Marshal.GetFunctionPointerForDelegate(closeFunc);
-
-			public static IntPtr Alloc(Stream stream)
-			{
-				IntPtr rwops = SDL.SDL_AllocRW();
-				unsafe
-				{
-					SDL.SDL_RWops* p = (SDL.SDL_RWops*) rwops;
-					p->size = sizePtr;
-					p->seek = seekPtr;
-					p->read = readPtr;
-					p->write = writePtr;
-					p->close = closePtr;
-				}
-				lock (streamMap)
-				{
-					streamMap.Add(rwops, stream);
-				}
-				return rwops;
-			}
-
-			private static byte[] GetTemp(int len)
-			{
-				if (len > temp.Length)
-				{
-					temp = new byte[len];
-				}
-				return temp;
-			}
-
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsSizeCallback))]
-			private static long size(IntPtr context)
-			{
-				Stream stream;
-				lock (streamMap)
-				{
-					stream = streamMap[context];
-				}
-				return stream.Length;
-			}
-
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsSeekCallback))]
-			private static long seek(IntPtr context, long offset, int whence)
-			{
-				Stream stream;
-				lock (streamMap)
-				{
-					stream = streamMap[context];
-				}
-				stream.Seek(offset, (SeekOrigin) whence);
-				return stream.Position;
-			}
-
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsReadCallback))]
-			private static IntPtr read(
-				IntPtr context,
-				IntPtr ptr,
-				IntPtr size,
-				IntPtr maxnum
-			) {
-				Stream stream;
-				int len = size.ToInt32() * maxnum.ToInt32();
-				lock (streamMap)
-				{
-					stream = streamMap[context];
-
-					// Other streams may contend for temp!
-					len = stream.Read(
-						GetTemp(len),
-						0,
-						len
-					);
-					Marshal.Copy(temp, 0, ptr, len);
-				}
-				return (IntPtr) len;
-			}
-
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsWriteCallback))]
-			private static IntPtr write(
-				IntPtr context,
-				IntPtr ptr,
-				IntPtr size,
-				IntPtr num
-			) {
-				Stream stream;
-				int len = size.ToInt32() * num.ToInt32();
-				lock (streamMap)
-				{
-					stream = streamMap[context];
-
-					// Other streams may contend for temp!
-					Marshal.Copy(
-						ptr,
-						GetTemp(len),
-						0,
-						len
-					);
-					stream.Write(temp, 0, len);
-				}
-				return (IntPtr) len;
-			}
-
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsCloseCallback))]
-			public static int close(IntPtr context)
-			{
-				lock (streamMap)
-				{
-					streamMap.Remove(context);
-				}
-				SDL.SDL_FreeRW(context);
-				return 0;
-			}
 		}
 
 		#endregion
@@ -3005,8 +2253,9 @@ namespace Microsoft.Xna.Framework
 			{ (int) SDL.SDL_Keycode.SDLK_LSHIFT,		Keys.LeftShift },
 			{ (int) SDL.SDL_Keycode.SDLK_RSHIFT,		Keys.RightShift },
 			{ (int) SDL.SDL_Keycode.SDLK_APPLICATION,	Keys.Apps },
+			{ (int) SDL.SDL_Keycode.SDLK_MENU,		Keys.Apps },
 			{ (int) SDL.SDL_Keycode.SDLK_SLASH,		Keys.OemQuestion },
-			{ (int) SDL.SDL_Keycode.SDLK_BACKSLASH,		Keys.OemBackslash },
+			{ (int) SDL.SDL_Keycode.SDLK_BACKSLASH,		Keys.OemPipe },
 			{ (int) SDL.SDL_Keycode.SDLK_LEFTBRACKET,	Keys.OemOpenBrackets },
 			{ (int) SDL.SDL_Keycode.SDLK_RIGHTBRACKET,	Keys.OemCloseBrackets },
 			{ (int) SDL.SDL_Keycode.SDLK_CAPSLOCK,		Keys.CapsLock },
@@ -3136,8 +2385,9 @@ namespace Microsoft.Xna.Framework
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_LSHIFT,		Keys.LeftShift },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_RSHIFT,		Keys.RightShift },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_APPLICATION,	Keys.Apps },
+			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_MENU,		Keys.Apps },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_SLASH,		Keys.OemQuestion },
-			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_BACKSLASH,	Keys.OemBackslash },
+			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_BACKSLASH,	Keys.OemPipe },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_LEFTBRACKET,	Keys.OemOpenBrackets },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_RIGHTBRACKET,	Keys.OemCloseBrackets },
 			{ (int) SDL.SDL_Scancode.SDL_SCANCODE_CAPSLOCK,		Keys.CapsLock },
@@ -3263,7 +2513,7 @@ namespace Microsoft.Xna.Framework
 			{ (int) Keys.RightShift,	SDL.SDL_Scancode.SDL_SCANCODE_RSHIFT },
 			{ (int) Keys.Apps,		SDL.SDL_Scancode.SDL_SCANCODE_APPLICATION },
 			{ (int) Keys.OemQuestion,	SDL.SDL_Scancode.SDL_SCANCODE_SLASH },
-			{ (int) Keys.OemBackslash,	SDL.SDL_Scancode.SDL_SCANCODE_BACKSLASH },
+			{ (int) Keys.OemPipe,		SDL.SDL_Scancode.SDL_SCANCODE_BACKSLASH },
 			{ (int) Keys.OemOpenBrackets,	SDL.SDL_Scancode.SDL_SCANCODE_LEFTBRACKET },
 			{ (int) Keys.OemCloseBrackets,	SDL.SDL_Scancode.SDL_SCANCODE_RIGHTBRACKET },
 			{ (int) Keys.CapsLock,		SDL.SDL_Scancode.SDL_SCANCODE_CAPSLOCK },
@@ -3354,7 +2604,8 @@ namespace Microsoft.Xna.Framework
 		#region Private Static Win32 WM_PAINT Interop
 
 		private static SDL.SDL_EventFilter win32OnPaint = Win32OnPaint;
-		private static unsafe int Win32OnPaint(IntPtr func, IntPtr evtPtr)
+		private static SDL.SDL_EventFilter prevEventFilter;
+		private static unsafe int Win32OnPaint(IntPtr userdata, IntPtr evtPtr)
 		{
 			SDL.SDL_Event* evt = (SDL.SDL_Event*) evtPtr;
 			if (	evt->type == SDL.SDL_EventType.SDL_WINDOWEVENT &&
@@ -3369,6 +2620,10 @@ namespace Microsoft.Xna.Framework
 						return 0;
 					}
 				}
+			}
+			if (prevEventFilter != null)
+			{
+				return prevEventFilter(userdata, evtPtr);
 			}
 			return 1;
 		}

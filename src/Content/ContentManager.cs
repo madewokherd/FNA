@@ -286,6 +286,10 @@ namespace Microsoft.Xna.Framework.Content
 				{
 					modifiedAssetName = Texture2DReader.Normalize(modifiedAssetName);
 				}
+				else if (typeof(T) == typeof(TextureCube))
+				{
+					modifiedAssetName = Texture2DReader.Normalize(modifiedAssetName);
+				}
 				else if ((typeof(T) == typeof(SoundEffect)))
 				{
 					modifiedAssetName = SoundEffectReader.Normalize(modifiedAssetName);
@@ -369,22 +373,35 @@ namespace Microsoft.Xna.Framework.Content
 					texture.Name = assetName;
 					result = texture;
 				}
-				else if ((typeof(T) == typeof(SoundEffect)))
+				else if (typeof(T) == typeof(TextureCube))
 				{
-					result = SoundEffect.FromStream(stream);
+					TextureCube texture = TextureCube.DDSFromStreamEXT(
+						GetGraphicsDevice(),
+						stream
+					);
+					texture.Name = assetName;
+					result = texture;
 				}
-				else if ((typeof(T) == typeof(Effect)))
+				else if (typeof(T) == typeof(SoundEffect))
+				{
+					SoundEffect effect = SoundEffect.FromStream(stream);
+					effect.Name = assetName;
+					result = effect;
+				}
+				else if (typeof(T) == typeof(Effect))
 				{
 					byte[] data = new byte[stream.Length];
 					stream.Read(data, 0, (int) stream.Length);
-					result = new Effect(GetGraphicsDevice(), data);
+					Effect effect = new Effect(GetGraphicsDevice(), data);
+					effect.Name = assetName;
+					result = effect;
 				}
-				else if ((typeof(T) == typeof(Song)))
+				else if (typeof(T) == typeof(Song))
 				{
 					// FIXME: Not using the stream! -flibit
 					result = new Song(modifiedAssetName);
 				}
-				else if ((typeof(T) == typeof(Video)))
+				else if (typeof(T) == typeof(Video))
 				{
 					// FIXME: Not using the stream! -flibit
 					result = new Video(modifiedAssetName, GetGraphicsDevice());
