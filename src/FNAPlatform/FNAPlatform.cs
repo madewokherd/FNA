@@ -127,6 +127,9 @@ namespace Microsoft.Xna.Framework
 			NeedsPlatformMainLoop = 	SDL2_FNAPlatform.NeedsPlatformMainLoop;
 			RunPlatformMainLoop =		SDL2_FNAPlatform.RunPlatformMainLoop;
 
+			// wine-mono change: ensure SDL2 loads before FNA3D
+			SDL2.SDL.SDL_GetPlatform();
+
 			FNALoggerEXT.Initialize();
 
 			AppDomain.CurrentDomain.ProcessExit += SDL2_FNAPlatform.ProgramExit;
