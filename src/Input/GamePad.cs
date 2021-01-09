@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2020 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2021 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -98,6 +98,31 @@ namespace Microsoft.Xna.Framework.Input
 		public static void SetLightBarEXT(PlayerIndex playerIndex, Color color)
 		{
 			FNAPlatform.SetGamePadLightBar((int) playerIndex, color);
+		}
+
+		public static bool SetTriggerVibrationEXT(PlayerIndex playerIndex, float leftTrigger, float rightTrigger)
+		{
+			return FNAPlatform.SetGamePadTriggerVibration(
+				(int) playerIndex,
+				leftTrigger,
+				rightTrigger
+			);
+		}
+
+		public static bool GetGyroEXT(PlayerIndex playerIndex, out Vector3 gyro)
+		{
+			return FNAPlatform.GetGamePadGyro(
+				(int) playerIndex,
+				out gyro
+			);
+		}
+
+		public static bool GetAccelerometerEXT(PlayerIndex playerIndex, out Vector3 accel)
+		{
+			return FNAPlatform.GetGamePadAccelerometer(
+				(int) playerIndex,
+				out accel
+			);
 		}
 
 		#endregion

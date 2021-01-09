@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2020 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2021 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -238,6 +238,13 @@ namespace Microsoft.Xna.Framework
 				);
 				Environment.SetEnvironmentVariable(
 					"SDL_OPENGL_ES_DRIVER",
+					"1"
+				);
+			}
+			if (args.TryGetValue("forcemailboxvsync", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA3D_VULKAN_FORCE_MAILBOX_VSYNC",
 					"1"
 				);
 			}
@@ -1613,9 +1620,6 @@ namespace Microsoft.Xna.Framework
 		private static Dictionary<int, int> INTERNAL_instanceList = new Dictionary<int, int>();
 		private static string[] INTERNAL_guids = GenStringArray();
 
-		// Light bar information
-		private static string[] INTERNAL_lightBars = GenStringArray();
-
 		// Cached GamePadStates/Capabilities
 		private static GamePadState[] INTERNAL_states = new GamePadState[GamePad.GAMEPAD_COUNT];
 		private static GamePadCapabilities[] INTERNAL_capabilities = new GamePadCapabilities[GamePad.GAMEPAD_COUNT];
@@ -1781,6 +1785,32 @@ namespace Microsoft.Xna.Framework
 				dpadRight = ButtonState.Pressed;
 			}
 
+			// Extensions
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_MISC1) != 0)
+			{
+				gc_buttonState |= Buttons.Misc1EXT;
+			}
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE1) != 0)
+			{
+				gc_buttonState |= Buttons.Paddle1EXT;
+			}
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE2) != 0)
+			{
+				gc_buttonState |= Buttons.Paddle2EXT;
+			}
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE3) != 0)
+			{
+				gc_buttonState |= Buttons.Paddle3EXT;
+			}
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE4) != 0)
+			{
+				gc_buttonState |= Buttons.Paddle4EXT;
+			}
+			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_TOUCHPAD) != 0)
+			{
+				gc_buttonState |= Buttons.TouchPadEXT;
+			}
+
 			// Build the GamePadState, increment PacketNumber if state changed.
 			GamePadState gc_builtState = new GamePadState(
 				new GamePadThumbSticks(stickLeft, stickRight, deadZoneMode),
@@ -1815,6 +1845,22 @@ namespace Microsoft.Xna.Framework
 			) == 0;
 		}
 
+		public static bool SetGamePadTriggerVibration(int index, float leftTrigger, float rightTrigger)
+		{
+			IntPtr device = INTERNAL_devices[index];
+			if (device == IntPtr.Zero)
+			{
+				return false;
+			}
+
+			return SDL.SDL_GameControllerRumbleTriggers(
+				device,
+				(ushort) (MathHelper.Clamp(leftTrigger, 0.0f, 1.0f) * 0xFFFF),
+				(ushort) (MathHelper.Clamp(rightTrigger, 0.0f, 1.0f) * 0xFFFF),
+				0
+			) == 0;
+		}
+
 		public static string GetGamePadGUID(int index)
 		{
 			return INTERNAL_guids[index];
@@ -1822,22 +1868,95 @@ namespace Microsoft.Xna.Framework
 
 		public static void SetGamePadLightBar(int index, Color color)
 		{
-			if (String.IsNullOrEmpty(INTERNAL_lightBars[index]))
+			IntPtr device = INTERNAL_devices[index];
+			if (device == IntPtr.Zero)
 			{
 				return;
 			}
 
-			string baseDir = INTERNAL_lightBars[index];
-			try
+			SDL.SDL_GameControllerSetLED(
+				device,
+				color.R,
+				color.G,
+				color.B
+			);
+		}
+
+		public static bool GetGamePadGyro(int index, out Vector3 gyro)
+		{
+			IntPtr device = INTERNAL_devices[index];
+			if (device == IntPtr.Zero)
 			{
-				File.WriteAllText(baseDir + "red/brightness", color.R.ToString());
-				File.WriteAllText(baseDir + "green/brightness", color.G.ToString());
-				File.WriteAllText(baseDir + "blue/brightness", color.B.ToString());
+				gyro = Vector3.Zero;
+				return false;
 			}
-			catch
+
+			if (SDL.SDL_GameControllerIsSensorEnabled(
+				device,
+				SDL.SDL_SensorType.SDL_SENSOR_GYRO
+			) == SDL.SDL_bool.SDL_FALSE) {
+				SDL.SDL_GameControllerSetSensorEnabled(
+					device,
+					SDL.SDL_SensorType.SDL_SENSOR_GYRO,
+					SDL.SDL_bool.SDL_TRUE
+				);
+			}
+
+			unsafe
 			{
-				// If something went wrong, assume the worst and just remove it.
-				INTERNAL_lightBars[index] = String.Empty;
+				float* data = stackalloc float[3];
+				if (SDL.SDL_GameControllerGetSensorData(
+					device,
+					SDL.SDL_SensorType.SDL_SENSOR_GYRO,
+					(IntPtr) data,
+					3
+				) < 0) {
+					gyro = Vector3.Zero;
+					return false;
+				}
+				gyro.X = data[0];
+				gyro.Y = data[1];
+				gyro.Z = data[2];
+				return true;
+			}
+		}
+
+		public static bool GetGamePadAccelerometer(int index, out Vector3 accel)
+		{
+			IntPtr device = INTERNAL_devices[index];
+			if (device == IntPtr.Zero)
+			{
+				accel = Vector3.Zero;
+				return false;
+			}
+
+			if (SDL.SDL_GameControllerIsSensorEnabled(
+				device,
+				SDL.SDL_SensorType.SDL_SENSOR_ACCEL
+			) == SDL.SDL_bool.SDL_FALSE) {
+				SDL.SDL_GameControllerSetSensorEnabled(
+					device,
+					SDL.SDL_SensorType.SDL_SENSOR_ACCEL,
+					SDL.SDL_bool.SDL_TRUE
+				);
+			}
+
+			unsafe
+			{
+				float* data = stackalloc float[3];
+				if (SDL.SDL_GameControllerGetSensorData(
+					device,
+					SDL.SDL_SensorType.SDL_SENSOR_ACCEL,
+					(IntPtr) data,
+					3
+				) < 0) {
+					accel = Vector3.Zero;
+					return false;
+				}
+				accel.X = data[0];
+				accel.Y = data[1];
+				accel.Z = data[2];
+				return true;
 			}
 		}
 
@@ -1883,6 +2002,12 @@ namespace Microsoft.Xna.Framework
 
 			// Initialize the haptics for the joystick, if applicable.
 			bool hasRumble = SDL.SDL_GameControllerRumble(
+				INTERNAL_devices[which],
+				0,
+				0,
+				0
+			) == 0;
+			bool hasTriggerRumble = SDL.SDL_GameControllerRumbleTriggers(
 				INTERNAL_devices[which],
 				0,
 				0,
@@ -1980,6 +2105,42 @@ namespace Microsoft.Xna.Framework
 			caps.HasLeftVibrationMotor = hasRumble;
 			caps.HasRightVibrationMotor = hasRumble;
 			caps.HasVoiceSupport = false;
+			caps.HasLightBarEXT = SDL.SDL_GameControllerHasLED(
+				INTERNAL_devices[which]
+			) == SDL.SDL_bool.SDL_TRUE;
+			caps.HasTriggerVibrationMotorsEXT = hasTriggerRumble;
+			caps.HasMisc1EXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_MISC1
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasPaddle1EXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE1
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasPaddle2EXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE2
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasPaddle3EXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE3
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasPaddle4EXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_PADDLE4
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasTouchPadEXT = SDL.SDL_GameControllerGetBindForButton(
+				INTERNAL_devices[which],
+				SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_TOUCHPAD
+			).bindType != SDL.SDL_GameControllerBindType.SDL_CONTROLLER_BINDTYPE_NONE;
+			caps.HasGyroEXT = SDL.SDL_GameControllerHasSensor(
+				INTERNAL_devices[which],
+				SDL.SDL_SensorType.SDL_SENSOR_GYRO
+			) == SDL.SDL_bool.SDL_TRUE;
+			caps.HasAccelerometerEXT = SDL.SDL_GameControllerHasSensor(
+				INTERNAL_devices[which],
+				SDL.SDL_SensorType.SDL_SENSOR_ACCEL
+			) == SDL.SDL_bool.SDL_TRUE;
 			INTERNAL_capabilities[which] = caps;
 
 			/* Store the GUID string for this device
@@ -2000,39 +2161,6 @@ namespace Microsoft.Xna.Framework
 					product & 0xFF,
 					product >> 8
 				);
-			}
-
-			// Initialize light bar
-			if (	OSVersion.Equals("Linux") &&
-				(	INTERNAL_guids[which].Equals("4c05c405") ||
-					INTERNAL_guids[which].Equals("4c05cc09")	)	)
-			{
-				// Get all of the individual PS4 LED instances
-				List<string> ledList = new List<string>();
-				string[] dirs = Directory.GetDirectories("/sys/class/leds/");
-				foreach (string dir in dirs)
-				{
-					if (	dir.EndsWith("blue") &&
-						(	dir.Contains("054C:05C4") ||
-							dir.Contains("054C:09CC")	)	)
-					{
-						ledList.Add(dir.Substring(0, dir.LastIndexOf(':') + 1));
-					}
-				}
-				// Find how many of these are already in use
-				int numLights = 0;
-				for (int i = 0; i < INTERNAL_lightBars.Length; i += 1)
-				{
-					if (!String.IsNullOrEmpty(INTERNAL_lightBars[i]))
-					{
-						numLights += 1;
-					}
-				}
-				// If all are not already in use, use the first unused light
-				if (numLights < ledList.Count)
-				{
-					INTERNAL_lightBars[which] = ledList[numLights];
-				}
 			}
 
 			// Print controller information to stdout.

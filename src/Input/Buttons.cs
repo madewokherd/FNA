@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2020 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2021 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -118,6 +118,16 @@ namespace Microsoft.Xna.Framework.Input
 		/// <summary>
 		/// Left stick is towards the right.
 		/// </summary>
-		LeftThumbstickRight =	0x40000000
+		LeftThumbstickRight =	0x40000000,
+
+		// Extensions
+		Misc1EXT =		0x00000400,
+		Paddle1EXT =		0x00010000,
+		Paddle2EXT =		0x00020000,
+		Paddle3EXT =		0x00040000,
+		Paddle4EXT =		0x00080000,
+		TouchPadEXT =		0x00100000
+
+		// Unused bitflags: 0x80000000
 	}
 }
