@@ -40,20 +40,41 @@ namespace Microsoft.Xna.Framework
 
 		#region Internal Static Functions
 
+		// WINE MONO HACK: Don't write to the console, the application should control that.
+		internal static void InfoMessage(string str)
+		{
+			// Do nothing, message can be accessed with WINE_MONO_TRACE=T:Microsoft.Xna.Framework.FNALoggerEXT
+		}
+		internal static void WarnMessage(string str)
+		{
+			// Do nothing, message can be accessed with WINE_MONO_TRACE=T:Microsoft.Xna.Framework.FNALoggerEXT
+		}
+		internal static void ErrorMessage(string str)
+		{
+			// Throw an exception so this shows up in a WINE_MONO_TRACE log.
+			try
+			{
+				throw new Exception(str);
+			}
+			catch
+			{
+			}
+		}
+
 		internal static void Initialize()
 		{
 			/* Don't overwrite application log hooks! */
 			if (FNALoggerEXT.LogInfo == null)
 			{
-				FNALoggerEXT.LogInfo = Console.WriteLine;
+				FNALoggerEXT.LogInfo = InfoMessage;
 			}
 			if (FNALoggerEXT.LogWarn == null)
 			{
-				FNALoggerEXT.LogWarn = Console.WriteLine;
+				FNALoggerEXT.LogWarn = WarnMessage;
 			}
 			if (FNALoggerEXT.LogError == null)
 			{
-				FNALoggerEXT.LogError = Console.WriteLine;
+				FNALoggerEXT.LogError = ErrorMessage;
 			}
 
 			/* Try to hook into the FNA3D logging system */
