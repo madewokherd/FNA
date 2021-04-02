@@ -474,8 +474,7 @@ namespace Microsoft.Xna.Framework
 			ref string resultDeviceName
 		) {
 			bool center = false;
-			if (	Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1" &&
-				OSVersion.Equals("Mac OS X")	)
+			if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
 			{
 				/* For high-DPI windows, halve the size!
 				 * The drawable size is now the primary width/height, so
@@ -1193,14 +1192,14 @@ namespace Microsoft.Xna.Framework
 		private static Game emscriptenGame;
 		private delegate void em_callback_func();
 
-		[DllImport("emscripten", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("__Native", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void emscripten_set_main_loop(
 			em_callback_func func,
 			int fps,
 			int simulate_infinite_loop
 		);
 
-		[DllImport("emscripten", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("__Native", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void emscripten_cancel_main_loop();
 
 		[ObjCRuntime.MonoPInvokeCallback(typeof(em_callback_func))]
@@ -1708,9 +1707,6 @@ namespace Microsoft.Xna.Framework
 				return new GamePadState();
 			}
 
-			// The "master" button state is built from this.
-			Buttons gc_buttonState = (Buttons) 0;
-
 			// Sticks
 			Vector2 stickLeft = new Vector2(
 				(float) SDL.SDL_GameControllerGetAxis(
@@ -1732,22 +1728,6 @@ namespace Microsoft.Xna.Framework
 					SDL.SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_RIGHTY
 				) / -32767.0f
 			);
-			gc_buttonState |= READ_StickToButtons(
-				stickLeft,
-				Buttons.LeftThumbstickLeft,
-				Buttons.LeftThumbstickRight,
-				Buttons.LeftThumbstickUp,
-				Buttons.LeftThumbstickDown,
-				GamePad.LeftDeadZone
-			);
-			gc_buttonState |= READ_StickToButtons(
-				stickRight,
-				Buttons.RightThumbstickLeft,
-				Buttons.RightThumbstickRight,
-				Buttons.RightThumbstickUp,
-				Buttons.RightThumbstickDown,
-				GamePad.RightDeadZone
-			);
 
 			// Triggers
 			float triggerLeft = (float) SDL.SDL_GameControllerGetAxis(
@@ -1758,16 +1738,9 @@ namespace Microsoft.Xna.Framework
 				device,
 				SDL.SDL_GameControllerAxis.SDL_CONTROLLER_AXIS_TRIGGERRIGHT
 			) / 32767.0f;
-			if (triggerLeft > GamePad.TriggerThreshold)
-			{
-				gc_buttonState |= Buttons.LeftTrigger;
-			}
-			if (triggerRight > GamePad.TriggerThreshold)
-			{
-				gc_buttonState |= Buttons.RightTrigger;
-			}
 
 			// Buttons
+			Buttons gc_buttonState = (Buttons) 0;
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_A) != 0)
 			{
 				gc_buttonState |= Buttons.A;
@@ -2242,31 +2215,6 @@ namespace Microsoft.Xna.Framework
 			SDL.SDL_ClearError();
 
 			FNALoggerEXT.LogInfo("Removed device, player: " + output.ToString());
-		}
-
-		// GetState can convert stick values to button values
-		private static Buttons READ_StickToButtons(Vector2 stick, Buttons left, Buttons right, Buttons up , Buttons down, float DeadZoneSize)
-		{
-			Buttons b = (Buttons) 0;
-
-			if (stick.X > DeadZoneSize)
-			{
-				b |= right;
-			}
-			if (stick.X < -DeadZoneSize)
-			{
-				b |= left;
-			}
-			if (stick.Y > DeadZoneSize)
-			{
-				b |= up;
-			}
-			if (stick.Y < -DeadZoneSize)
-			{
-				b |= down;
-			}
-
-			return b;
 		}
 
 		private static string[] GenStringArray()
