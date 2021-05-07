@@ -41,11 +41,6 @@ namespace Microsoft.Xna.Framework
 		private static int RetinaWidth;
 		private static int RetinaHeight;
 
-		private static readonly bool OSXUseSpaces = (
-			SDL.SDL_GetPlatform().Equals("Mac OS X") && // Prevents race with OSVersion
-			SDL.SDL_GetHintBoolean(SDL.SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, SDL.SDL_bool.SDL_TRUE) == SDL.SDL_bool.SDL_TRUE
-		);
-
 		#endregion
 
 		#region Game Objects
@@ -143,24 +138,6 @@ namespace Microsoft.Xna.Framework
 			 */
 			SDL.SDL_SetMainReady();
 
-			/* A number of platforms don't support global mouse, but
-			 * this really only matters on desktop where the game
-			 * screen may not be covering the whole display.
-			 */
-			if (	OSVersion.Equals("Windows") ||
-				OSVersion.Equals("Mac OS X") ||
-				OSVersion.Equals("Linux") ||
-				OSVersion.Equals("FreeBSD") ||
-				OSVersion.Equals("OpenBSD") ||
-				OSVersion.Equals("NetBSD")	)
-			{
-				SupportsGlobalMouse = true;
-			}
-			else
-			{
-				SupportsGlobalMouse = false;
-			}
-
 			// Also, Windows is an idiot. -flibit
 			if (	OSVersion.Equals("Windows") ||
 				OSVersion.Equals("WinRT")	)
@@ -256,6 +233,21 @@ namespace Microsoft.Xna.Framework
 				SDL.SDL_INIT_GAMECONTROLLER |
 				SDL.SDL_INIT_HAPTIC
 			);
+
+			/* A number of platforms don't support global mouse, but
+			 * this really only matters on desktop where the game
+			 * screen may not be covering the whole display.
+			 */
+			if (	OSVersion.Equals("Windows") ||
+				OSVersion.Equals("Mac OS X") ||
+				SDL.SDL_GetCurrentVideoDriver() == "x11"	)
+			{
+				SupportsGlobalMouse = true;
+			}
+			else
+			{
+				SupportsGlobalMouse = false;
+			}
 
 			// Set any hints to match XNA4 behavior...
 			string hint = SDL.SDL_GetHint(SDL.SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS);
@@ -958,7 +950,7 @@ namespace Microsoft.Xna.Framework
 					{
 						game.IsActive = true;
 
-						if (!OSXUseSpaces)
+						if (SDL.SDL_GetCurrentVideoDriver() == "x11")
 						{
 							// If we alt-tab away, we lose the 'fullscreen desktop' flag on some WMs
 							SDL.SDL_SetWindowFullscreen(
@@ -976,7 +968,7 @@ namespace Microsoft.Xna.Framework
 					{
 						game.IsActive = false;
 
-						if (!OSXUseSpaces)
+						if (SDL.SDL_GetCurrentVideoDriver() == "x11")
 						{
 							SDL.SDL_SetWindowFullscreen(game.Window.Handle, 0);
 						}
