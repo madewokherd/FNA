@@ -337,7 +337,7 @@
 		<Compile Include="src\Vector4.cs" />
 		<Compile Include="lib\SDL2-CS\src\SDL2.cs" />
 		<Compile Include="lib\FAudio\csharp\FAudio.cs" />
-		<Compile Include="lib\Theorafile\csharp\Theorafile.cs" />
+		<Compile Include="lib\FNAMF\Theorafile.cs" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="app.config" />

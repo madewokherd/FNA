@@ -321,7 +321,7 @@ SRC = \
 	src/Vector4.cs \
 	lib/SDL2-CS/src/SDL2.cs \
 	lib/FAudio/csharp/FAudio.cs \
-	lib/Theorafile/csharp/Theorafile.cs
+	lib/FNAMF/Theorafile.cs
 
 RESDIR = src/Graphics/Effect/StockEffects/FXB
 RESNAME = Microsoft.Xna.Framework.Graphics.Effect.Resources

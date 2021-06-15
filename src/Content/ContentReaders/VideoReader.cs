@@ -20,7 +20,7 @@ namespace Microsoft.Xna.Framework.Content
 	{
 		#region Private Supported File Extensions Variable
 
-		static string[] supportedExtensions = new string[] { ".ogv", ".ogg" };
+		static string[] supportedExtensions = new string[] { ".ogv", ".ogg", ".wmv" };
 
 		#endregion
 
