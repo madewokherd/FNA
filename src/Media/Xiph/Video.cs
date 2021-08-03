@@ -131,29 +131,6 @@ namespace Microsoft.Xna.Framework.Media
 			float framesPerSecond,
 			VideoSoundtrackType soundtrackType
 		) : this(fileName, device) {
-			/* If you got here, you've still got the XNB file! Well done!
-			 * Except if you're running FNA, you're not using the WMV anymore.
-			 * But surely it's the same video, right...?
-			 * Well, consider this a check more than anything. If this bothers
-			 * you, just remove the XNB file and we'll read the OGV straight up.
-			 * -flibit
-			 */
-			if (width != Width || height != Height)
-			{
-				throw new InvalidOperationException(
-					"XNB/OGV width/height mismatch!" +
-					" Width: " + Width.ToString() +
-					" Height: " + Height.ToString()
-				);
-			}
-			if (Math.Abs(FramesPerSecond - framesPerSecond) >= 1.0f)
-			{
-				throw new InvalidOperationException(
-					"XNB/OGV framesPerSecond mismatch!" +
-					" FPS: " + FramesPerSecond.ToString()
-				);
-			}
-
 			// FIXME: Oh, hey! I wish we had this info in Theora!
 			Duration = TimeSpan.FromMilliseconds(durationMS);
 			needsDurationHack = false;
