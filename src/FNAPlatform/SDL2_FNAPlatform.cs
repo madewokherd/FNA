@@ -241,6 +241,12 @@ namespace Microsoft.Xna.Framework
 				);
 			}
 
+			// Wine Mono hack: Default to OpenGL backend for now. Direct3D 11
+			// would normally have priority but hasn't been tested yet with
+			// Wine's d3dcompiler. This can be overridden by setting
+			// FNA3D_FORCE_DRIVER=D3D11 or FNA3D_FORCE_DRIVER=Vulkan
+			SDL.SDL_SetHint("FNA3D_FORCE_DRIVER", "OpenGL");
+
 			// This _should_ be the first real SDL call we make...
 			SDL.SDL_Init(
 				SDL.SDL_INIT_VIDEO |
