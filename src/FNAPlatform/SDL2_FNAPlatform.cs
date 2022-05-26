@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2021 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2022 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -268,9 +268,7 @@ namespace Microsoft.Xna.Framework
 			// This _should_ be the first real SDL call we make...
 			SDL.SDL_Init(
 				SDL.SDL_INIT_VIDEO |
-				SDL.SDL_INIT_JOYSTICK |
-				SDL.SDL_INIT_GAMECONTROLLER |
-				SDL.SDL_INIT_HAPTIC
+				SDL.SDL_INIT_GAMECONTROLLER
 			);
 
 			string videoDriver = SDL.SDL_GetCurrentVideoDriver();
