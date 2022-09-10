@@ -163,6 +163,14 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				throw new ArgumentNullException("data");
 			}
+			if (startIndex < 0)
+			{
+				throw new ArgumentOutOfRangeException("startIndex");
+			}
+			if (data.Length < (elementCount + startIndex))
+			{
+				throw new ArgumentOutOfRangeException("elementCount");
+			}
 
 			int x, y, w, h;
 			if (rect.HasValue)
@@ -180,6 +188,13 @@ namespace Microsoft.Xna.Framework.Graphics
 				h = Math.Max(Height >> level, 1);
 			}
 			int elementSize = Marshal.SizeOf(typeof(T));
+			int requiredBytes = (w * h * GetFormatSize(Format)) / GetBlockSizeSquared(Format);
+			int availableBytes = elementCount * elementSize;
+			if (requiredBytes > availableBytes)
+			{
+				throw new ArgumentOutOfRangeException("rect", "The region you are trying to upload is larger than the amount of data you provided.");
+			}
+
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
 			FNA3D.FNA3D_SetTextureData2D(
 				GraphicsDevice.GLDevice,
@@ -456,7 +471,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		#endregion
 
 		#region Public Static Texture2D Extensions
-		
+
 		/// <summary>
 		/// Loads image data from a given stream.
 		/// </summary>
@@ -514,14 +529,21 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 
 			int width, height, levels;
+			bool isCube;
 			SurfaceFormat format;
 			Texture.ParseDDS(
 				reader,
 				out format,
 				out width,
 				out height,
-				out levels
+				out levels,
+				out isCube
 			);
+
+			if (isCube)
+			{
+				throw new FormatException("This file contains cube map data!");
+			}
 
 			// Allocate/Load texture
 			result = new Texture2D(
