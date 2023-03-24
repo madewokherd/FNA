@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2022 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2023 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -269,10 +269,13 @@ namespace Microsoft.Xna.Framework
 			SDL.SDL_SetHint("FNA3D_FORCE_DRIVER", "OpenGL");
 
 			// This _should_ be the first real SDL call we make...
-			SDL.SDL_Init(
+			if (SDL.SDL_Init(
 				SDL.SDL_INIT_VIDEO |
 				SDL.SDL_INIT_GAMECONTROLLER
-			);
+			) != 0)
+			{
+				throw new Exception("SDL_Init failed: " + SDL.SDL_GetError());
+			}
 
 			string videoDriver = SDL.SDL_GetCurrentVideoDriver();
 
@@ -346,6 +349,54 @@ namespace Microsoft.Xna.Framework
 				SDL.SDL_EventType.SDL_CONTROLLERDEVICEADDED
 			) == 1) {
 				INTERNAL_AddInstance(evt[0].cdevice.which);
+			}
+
+			/* Minimal, Portable, SDL-based Tesla Splash.
+			 * Copyright (c) 2022-2023 Ethan Lee
+			 * Released under the zlib license:
+			 * https://www.zlib.net/zlib_license.html
+			 *
+			 * FIXME: SteamTesla is a guess based on SteamTenfoot/SteamDeck!
+			 *
+			 * Image: https://flibitijibibo.com/tesla.bmp
+			 * As you can see, this only works if the image is in
+			 * the title root, so this isn't being forced on anyone.
+			 *
+			 * Elon: I'll delete this code for $10M USD after taxes!
+			 * Love, flibit
+			 */
+			if (SDL.SDL_GetHint("SteamTesla") == "1")
+			{
+				IntPtr bmp = SDL.SDL_LoadBMP("tesla.bmp");
+				if (bmp != IntPtr.Zero)
+				{
+					int width, height;
+					unsafe
+					{
+						SDL.SDL_Surface *surface = (SDL.SDL_Surface*) bmp;
+						width = surface->w;
+						height = surface->h;
+					}
+					IntPtr window = SDL.SDL_CreateWindow(null, 0, 0, width, height, 0);
+					if (window != IntPtr.Zero)
+					{
+						ulong target = SDL.SDL_GetTicks64() + 2000;
+						do
+						{
+							/* Note that we're not polling events here, we would prefer
+							 * that these events go to the actual game instead!
+							 *
+							 * Also note that we're getting/blitting each frame, since
+							 * certain OS events can invalidate it (usually resizes?).
+							 */
+							IntPtr windowSurface = SDL.SDL_GetWindowSurface(window);
+							SDL.SDL_BlitSurface(bmp, IntPtr.Zero, windowSurface, IntPtr.Zero);
+							SDL.SDL_UpdateWindowSurface(window);
+						} while ((long) (SDL.SDL_GetTicks64() - target) <= 0);
+						SDL.SDL_DestroyWindow(window);
+					}
+					SDL.SDL_FreeSurface(bmp);
+				}
 			}
 
 			return titleLocation;
@@ -705,6 +756,11 @@ namespace Microsoft.Xna.Framework
 				window,
 				title
 			);
+		}
+
+		public static bool IsScreenKeyboardShown(IntPtr window)
+		{
+			return SDL.SDL_IsScreenKeyboardShown(window) == SDL.SDL_bool.SDL_TRUE;
 		}
 
 		private static void INTERNAL_SetIcon(IntPtr window, string title)
@@ -2349,6 +2405,14 @@ namespace Microsoft.Xna.Framework
 			return SDL.SDL_GetNumTouchFingers(
 				SDL.SDL_GetTouchDevice(0)
 			);
+		}
+
+		#endregion
+
+		#region TextInput Methods
+		public static bool IsTextInputActive()
+		{
+			return SDL.SDL_IsTextInputActive() != 0;
 		}
 
 		#endregion
