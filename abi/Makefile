@@ -14,18 +14,21 @@ ASSEMBLIES = \
 
 TARGETS = $(ASSEMBLIES:%=%.dll)
 
-%.dll: %.cs FNA.dll FNA.NetStub.dll
+FNA_DLL = WineMono.FNA.dll
+FNA_NETSTUB_DLL = WineMono.FNA.NetStub.dll
+
+%.dll: %.cs $(FNA_DLL) $(FNA_NETSTUB_DLL)
 	mkdir -p bin
-	mcs -delaysign+ -keyfile:xna4.pub $< -target:library -r:FNA.dll -r:FNA.NetStub.dll -out:$@
+	mcs -delaysign+ -keyfile:xna4.pub $< -target:library -r:$(FNA_DLL) -r:$(FNA_NETSTUB_DLL) -out:$@
 	sn -R $@ ../mono.snk
 
 all: $(TARGETS)
 
-FNA.dll: ../bin/Release/FNA.dll
-	cp ../bin/Release/FNA.dll .
+$(FNA_DLL): ../bin/Release/$(FNA_DLL)
+	cp ../bin/Release/$(FNA_DLL) .
 
-FNA.NetStub.dll: ../../FNA.NetStub/bin/Strongname/FNA.NetStub.dll
-	cp ../../FNA.NetStub/bin/Strongname/FNA.NetStub.dll .
+$(FNA_NETSTUB_DLL): ../../FNA.NetStub/bin/Strongname/$(FNA_NETSTUB_DLL)
+	cp ../../FNA.NetStub/bin/Strongname/$(FNA_NETSTUB_DLL) .
 
 clean:
-	rm -f $(TARGETS) FNA.dll FNA.NetStub.dll
+	rm -f $(TARGETS) $(FNA_DLL) $(FNA_NETSTUB_DLL)

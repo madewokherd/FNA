@@ -337,20 +337,22 @@ RES = \
 
 CSFLAGS=-keyfile:mono.snk -r:System.Windows.Forms
 
+FNA_DLL=WineMono.FNA.dll
+
 # Targets
 
 debug: clean-debug
 	mkdir -p bin/Debug
-	cp app.config bin/Debug/FNA.dll.config
-	mcs $(CSFLAGS) /unsafe -debug -define:DEBUG -out:bin/Debug/FNA.dll -target:library $(SRC) $(RES)
+	cp app.config bin/Debug/$(FNA_DLL).config
+	mcs $(CSFLAGS) /unsafe -debug -define:DEBUG -out:bin/Debug/$(FNA_DLL) -target:library $(SRC) $(RES)
 
 clean-debug:
 	rm -rf bin/Debug
 
 release: clean-release
 	mkdir -p bin/Release
-	cp app.config bin/Release/FNA.dll.config
-	mcs $(CSFLAGS) /unsafe -optimize -out:bin/Release/FNA.dll -target:library $(SRC) $(RES)
+	cp app.config bin/Release/$(FNA_DLL).config
+	mcs $(CSFLAGS) /unsafe -optimize -out:bin/Release/$(FNA_DLL) -target:library $(SRC) $(RES)
 
 clean-release:
 	rm -rf bin/Release

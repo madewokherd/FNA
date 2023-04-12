@@ -63,7 +63,7 @@ namespace Microsoft.Xna.Framework
 			get
 			{
 				// Wine change!
-				if (!System.Reflection.Assembly.GetCallingAssembly().GetName().Name.Equals("FNA"))
+				if (!System.Reflection.Assembly.GetCallingAssembly().GetName().Name.Equals("WineMono.FNA"))
 				{
 					SDL2.SDL.SDL_SysWMinfo info = new SDL2.SDL.SDL_SysWMinfo();
 					SDL2.SDL.SDL_GetWindowWMInfo(window, ref info);
