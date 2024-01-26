@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2023 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2024 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -135,8 +135,7 @@ namespace Microsoft.Xna.Framework
 			SDL.SDL_SetMainReady();
 
 			// Also, Windows is an idiot. -flibit
-			if (	OSVersion.Equals("Windows") ||
-				OSVersion.Equals("WinRT")	)
+			if (OSVersion.Equals("Windows"))
 			{
 				// Visual Studio is an idiot.
 				if (System.Diagnostics.Debugger.IsAttached)
@@ -323,8 +322,7 @@ namespace Microsoft.Xna.Framework
 			 * the user (rightfully) will have no idea why.
 			 * -flibit
 			 */
-			if (	OSVersion.Equals("Windows") ||
-				OSVersion.Equals("WinRT")	)
+			if (OSVersion.Equals("Windows"))
 			{
 				SDL.SDL_SetHint(
 					SDL.SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS,
@@ -361,8 +359,7 @@ namespace Microsoft.Xna.Framework
 				INTERNAL_AddInstance(evt[0].cdevice.which);
 			}
 
-			if (	OSVersion.Equals("Windows") ||
-				OSVersion.Equals("WinRT")	)
+			if (OSVersion.Equals("Windows"))
 			{
 				/* Windows has terrible event pumping and doesn't give us
 				 * WM_PAINT events correctly. So we get to do this!
@@ -380,7 +377,7 @@ namespace Microsoft.Xna.Framework
 			}
 
 			/* Minimal, Portable, SDL-based Tesla Splash.
-			 * Copyright (c) 2022-2023 Ethan Lee
+			 * Copyright (c) 2022-2024 Ethan Lee
 			 * Released under the zlib license:
 			 * https://www.zlib.net/zlib_license.html
 			 *
@@ -1629,12 +1626,6 @@ namespace Microsoft.Xna.Framework
 
 		public static DriveInfo GetDriveInfo(string storageRoot)
 		{
-			if (OSVersion.Equals("WinRT"))
-			{
-				// WinRT DriveInfo is a bunch of crap -flibit
-				return null;
-			}
-
 			DriveInfo result;
 			try
 			{
@@ -2337,21 +2328,6 @@ namespace Microsoft.Xna.Framework
 			) == SDL.SDL_bool.SDL_TRUE;
 			INTERNAL_capabilities[which] = caps;
 
-			// Get some basic information about the controller mapping
-			string deviceInfo;
-			bool overrideGUID;
-			string mapping = SDL.SDL_GameControllerMapping(INTERNAL_devices[which]);
-			if (string.IsNullOrEmpty(mapping))
-			{
-				deviceInfo = "Mapping not found";
-				overrideGUID = false;
-			}
-			else
-			{
-				deviceInfo = "Mapping: " + mapping;
-				overrideGUID = mapping.Contains("type:");
-			}
-
 			/* Store the GUID string for this device
 			 * FIXME: Replace GetGUIDEXT string with 3 short values -flibit
 			 */
@@ -2372,7 +2348,7 @@ namespace Microsoft.Xna.Framework
 				);
 			}
 
-			if (overrideGUID)
+			if (vendor == 0x28de) // Valve
 			{
 				SDL.SDL_GameControllerType gct = SDL.SDL_GameControllerGetType(
 					INTERNAL_devices[which]
@@ -2393,6 +2369,16 @@ namespace Microsoft.Xna.Framework
 			}
 
 			// Print controller information to stdout.
+			string deviceInfo;
+			string mapping = SDL.SDL_GameControllerMapping(INTERNAL_devices[which]);
+			if (string.IsNullOrEmpty(mapping))
+			{
+				deviceInfo = "Mapping not found";
+			}
+			else
+			{
+				deviceInfo = "Mapping: " + mapping;
+			}
 			FNALoggerEXT.LogInfo(
 				"Controller " + which.ToString() + ": " +
 				SDL.SDL_GameControllerName(INTERNAL_devices[which]) + ", " +
