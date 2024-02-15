@@ -94,6 +94,13 @@ namespace Microsoft.Xna.Framework
 					FNALoggerEXT.LogWarn(e.ToString());
 				}
 			}
+
+			protected override bool ProcessCmdKey (
+					ref System.Windows.Forms.Message msg, System.Windows.Forms.Keys keyData)
+			{
+				WndProc(ref msg);
+				return true;
+			}
 		}
 		private static Dictionary<IntPtr, HackForm> forms = new Dictionary<IntPtr, HackForm>();
 
@@ -145,6 +152,10 @@ namespace Microsoft.Xna.Framework
 						"1"
 					);
 				}
+				SDL.SDL_SetHint(
+					SDL.SDL_HINT_WINDOWS_ENABLE_MESSAGELOOP,
+					"0"
+				);
 			}
 
 			/* Mount TitleLocation.Path */
@@ -1010,6 +1021,7 @@ namespace Microsoft.Xna.Framework
 		) {
 			SDL.SDL_Event evt;
 			char* charsBuffer = stackalloc char[32]; // SDL_TEXTINPUTEVENT_TEXT_SIZE
+			System.Windows.Forms.Application.DoEvents();
 			while (SDL.SDL_PollEvent(out evt) == 1)
 			{
 				// Keyboard
