@@ -37,6 +37,8 @@ namespace Microsoft.Xna.Framework
 
 		private static bool SupportsGlobalMouse;
 
+		private static bool SupportsOrientations;
+
 		#endregion
 
 		#region Game Objects
@@ -300,6 +302,10 @@ namespace Microsoft.Xna.Framework
 			SupportsGlobalMouse = (	OSVersion.Equals("Windows") ||
 						OSVersion.Equals("Mac OS X") ||
 						videoDriver.Equals("x11")	);
+
+			// Only iOS and Android care about device orientation.
+			SupportsOrientations = ( OSVersion.Equals("iOS") ||
+						 OSVersion.Equals("Android")	);
 
 			/* High-DPI is really annoying and only some platforms
 			 * actually let you control the drawable surface.
@@ -944,6 +950,7 @@ namespace Microsoft.Xna.Framework
 					return DisplayOrientation.LandscapeRight;
 
 				case SDL.SDL_DisplayOrientation.SDL_ORIENTATION_PORTRAIT:
+				case SDL.SDL_DisplayOrientation.SDL_ORIENTATION_PORTRAIT_FLIPPED:
 					return DisplayOrientation.Portrait;
 
 				default:
@@ -987,7 +994,7 @@ namespace Microsoft.Xna.Framework
 
 		public static bool SupportsOrientationChanges()
 		{
-			return OSVersion.Equals("iOS") || OSVersion.Equals("Android");
+			return SupportsOrientations;
 		}
 
 		#endregion
@@ -1199,6 +1206,12 @@ namespace Microsoft.Xna.Framework
 						int newIndex = SDL.SDL_GetWindowDisplayIndex(
 							game.Window.Handle
 						);
+
+						if (newIndex >= GraphicsAdapter.Adapters.Count)
+						{
+							GraphicsAdapter.AdaptersChanged(); // quickfix for this event coming in before the display reattach event. (must be fixed in sdl)
+						}
+
 						if (GraphicsAdapter.Adapters[newIndex] != currentAdapter)
 						{
 							currentAdapter = GraphicsAdapter.Adapters[newIndex];
@@ -1233,16 +1246,19 @@ namespace Microsoft.Xna.Framework
 					// Orientation Change
 					if (evt.display.displayEvent == SDL.SDL_DisplayEventID.SDL_DISPLAYEVENT_ORIENTATION)
 					{
-						DisplayOrientation orientation = INTERNAL_ConvertOrientation(
-							(SDL.SDL_DisplayOrientation) evt.display.data1
-						);
+						if (SupportsOrientationChanges())
+						{
+							DisplayOrientation orientation = INTERNAL_ConvertOrientation(
+								(SDL.SDL_DisplayOrientation) evt.display.data1
+							);
 
-						INTERNAL_HandleOrientationChange(
-							orientation,
-							game.GraphicsDevice,
-							currentAdapter,
-							(FNAWindow) game.Window
-						);
+							INTERNAL_HandleOrientationChange(
+								orientation,
+								game.GraphicsDevice,
+								currentAdapter,
+								(FNAWindow) game.Window
+							);
+						}
 					}
 					else
 					{
