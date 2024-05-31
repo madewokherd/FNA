@@ -335,15 +335,14 @@ INT CDECL tf_readvideo(struct context *ctx, void *dst, int numframes)
 INT CDECL tf_readaudio(struct context *ctx, float *dst, int dst_count)
 {
     IMFSample *sample;
-    HRESULT hr;
+    HRESULT hr = S_OK;
     DWORD len = 0, flags;
     float *src;
+    int ret_count;
 
     WINE_TRACE("ctx %p, dst %p, dst_count %d.\n", ctx, dst, dst_count);
 
-    if (ctx->audio_buffer)
-        hr = S_OK;
-    else
+    if (!ctx->audio_buffer && !ctx->eos)
     {
         hr = IMFSourceReader_ReadSample(ctx->reader, ctx->audio_stream, 0, NULL, &flags, NULL, &sample);
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) ctx->eos = TRUE;
@@ -356,19 +355,20 @@ INT CDECL tf_readaudio(struct context *ctx, float *dst, int dst_count)
     }
 
     if (FAILED(hr))
-        dst_count = -1;
+        ret_count = -1;
     else if (!ctx->audio_buffer || ctx->eos)
-        dst_count = 0;
+        ret_count = 0;
     else
     {
+        int rem_count;
         hr = IMFMediaBuffer_Lock(ctx->audio_buffer, (BYTE **)&src, NULL, &len);
         if (SUCCEEDED(hr))
         {
-            dst_count = min(len / sizeof(float), dst_count);
-            memcpy(dst, src, dst_count * sizeof(float));
-            len -= dst_count * sizeof(float);
+            ret_count = min(len / sizeof(float), dst_count);
+            memcpy(dst, src, ret_count * sizeof(float));
+            len -= ret_count * sizeof(float);
 
-            memcpy(src, src + dst_count, len);
+            memmove(src, src + ret_count, len);
             hr = IMFMediaBuffer_SetCurrentLength(ctx->audio_buffer, len);
             IMFMediaBuffer_Unlock(ctx->audio_buffer);
         }
@@ -378,10 +378,19 @@ INT CDECL tf_readaudio(struct context *ctx, float *dst, int dst_count)
             IMFMediaBuffer_Release(ctx->audio_buffer);
             ctx->audio_buffer = NULL;
         }
+
+        if (FAILED(hr))
+            ret_count = -1;
+        else if ((rem_count = dst_count - ret_count))
+        {
+            int ret = tf_readaudio(ctx, dst + ret_count, rem_count);
+            if (ret != -1)
+                ret_count += ret;
+        }
     }
 
-    WINE_TRACE("ret len %d\n", dst_count);
-    return dst_count;
+    WINE_TRACE("ret len %d\n", ret_count);
+    return ret_count;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *res)
