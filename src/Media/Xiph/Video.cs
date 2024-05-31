@@ -89,38 +89,41 @@ namespace Microsoft.Xna.Framework.Media
 
 			Theorafile.th_pixel_fmt fmt;
 			Theorafile.tf_fopen(fileName, out theora);
-			Theorafile.tf_videoinfo(
-				theora,
-				out yWidth,
-				out yHeight,
-				out fps,
-				out fmt
-			);
-			if (fmt == Theorafile.th_pixel_fmt.TH_PF_420)
+			if (theora != IntPtr.Zero)
 			{
-				uvWidth = yWidth / 2;
-				uvHeight = yHeight / 2;
-			}
-			else if (fmt == Theorafile.th_pixel_fmt.TH_PF_422)
-			{
-				uvWidth = yWidth / 2;
-				uvHeight = yHeight;
-			}
-			else if (fmt == Theorafile.th_pixel_fmt.TH_PF_444)
-			{
-				uvWidth = yWidth;
-				uvHeight = yHeight;
-			}
-			else
-			{
-				throw new NotSupportedException(
-					"Unrecognized YUV format!"
+				Theorafile.tf_videoinfo(
+					theora,
+					out yWidth,
+					out yHeight,
+					out fps,
+					out fmt
 				);
-			}
+				if (fmt == Theorafile.th_pixel_fmt.TH_PF_420)
+				{
+					uvWidth = yWidth / 2;
+					uvHeight = yHeight / 2;
+				}
+				else if (fmt == Theorafile.th_pixel_fmt.TH_PF_422)
+				{
+					uvWidth = yWidth / 2;
+					uvHeight = yHeight;
+				}
+				else if (fmt == Theorafile.th_pixel_fmt.TH_PF_444)
+				{
+					uvWidth = yWidth;
+					uvHeight = yHeight;
+				}
+				else
+				{
+					throw new NotSupportedException(
+						"Unrecognized YUV format!"
+					);
+				}
 
-			// FIXME: This is a part of the Duration hack!
-			Duration = TimeSpan.MaxValue;
-			needsDurationHack = true;
+				// FIXME: This is a part of the Duration hack!
+				Duration = TimeSpan.MaxValue;
+				needsDurationHack = true;
+			}
 		}
 
 		internal Video(
@@ -135,6 +138,13 @@ namespace Microsoft.Xna.Framework.Media
 			// FIXME: Oh, hey! I wish we had this info in Theora!
 			Duration = TimeSpan.FromMilliseconds(durationMS);
 			needsDurationHack = false;
+
+			if (theora == IntPtr.Zero)
+			{
+				yWidth = width;
+				yHeight = height;
+				fps = framesPerSecond;
+			}
 
 			VideoSoundtrackType = soundtrackType;
 		}
