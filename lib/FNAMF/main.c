@@ -309,7 +309,7 @@ INT CDECL tf_readvideo(struct context *ctx, void *dst, int numframes)
         if (FAILED(hr) || !sample)
             return FALSE;
 
-        if (!numframes--)
+        if (!--numframes)
             break;
         IMFSample_Release(sample);
     }
