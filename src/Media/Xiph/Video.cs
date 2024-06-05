@@ -22,26 +22,20 @@ namespace Microsoft.Xna.Framework.Media
 
 		public int Width
 		{
-			get
-			{
-				return yWidth;
-			}
+			get;
+			private set;
 		}
 
 		public int Height
 		{
-			get
-			{
-				return yHeight;
-			}
+			get;
+			private set;
 		}
 
 		public float FramesPerSecond
 		{
-			get
-			{
-				return (float) fps;
-			}
+			get;
+			private set;
 		}
 
 		public VideoSoundtrackType VideoSoundtrackType
@@ -69,14 +63,9 @@ namespace Microsoft.Xna.Framework.Media
 
 		#endregion
 
-		#region Internal Variables: Theorafile
+		#region Internal Variables
 
-		internal IntPtr theora;
-		internal int yWidth;
-		internal int yHeight;
-		internal int uvWidth;
-		internal int uvHeight;
-		internal double fps;
+		internal string handle;
 		internal bool needsDurationHack;
 
 		#endregion
@@ -85,38 +74,36 @@ namespace Microsoft.Xna.Framework.Media
 
 		internal Video(string fileName, GraphicsDevice device)
 		{
+			handle = fileName;
 			GraphicsDevice = device;
 
+			/* This is the raw file constructor; unlike the XNB
+			 * constructor we can be up front about files not
+			 * existing, so let's do that!
+			 */
+			if (!File.Exists(fileName))
+			{
+				throw new FileNotFoundException(fileName);
+			}
+
+			IntPtr theora;
+			int width;
+			int height;
+			double fps;
 			Theorafile.th_pixel_fmt fmt;
 			Theorafile.tf_fopen(fileName, out theora);
 			Theorafile.tf_videoinfo(
 				theora,
-				out yWidth,
-				out yHeight,
+				out width,
+				out height,
 				out fps,
 				out fmt
 			);
-			if (fmt == Theorafile.th_pixel_fmt.TH_PF_420)
-			{
-				uvWidth = yWidth / 2;
-				uvHeight = yHeight / 2;
-			}
-			else if (fmt == Theorafile.th_pixel_fmt.TH_PF_422)
-			{
-				uvWidth = yWidth / 2;
-				uvHeight = yHeight;
-			}
-			else if (fmt == Theorafile.th_pixel_fmt.TH_PF_444)
-			{
-				uvWidth = yWidth;
-				uvHeight = yHeight;
-			}
-			else
-			{
-				throw new NotSupportedException(
-					"Unrecognized YUV format!"
-				);
-			}
+			Theorafile.tf_close(ref theora);
+
+			Width = width;
+			Height = height;
+			FramesPerSecond = (float) fps;
 
 			// FIXME: This is a part of the Duration hack!
 			Duration = TimeSpan.MaxValue;
@@ -131,7 +118,19 @@ namespace Microsoft.Xna.Framework.Media
 			int height,
 			float framesPerSecond,
 			VideoSoundtrackType soundtrackType
-		) : this(fileName, device) {
+		) {
+			handle = fileName;
+			GraphicsDevice = device;
+
+			/* This is the XNB constructor, which really just loads
+			 * the metadata without actually loading the video. For
+			 * accuracy's sake we have to wait until VideoPlayer
+			 * tries to load this before throwing Exceptions.
+			 */
+			Width = width;
+			Height = height;
+			FramesPerSecond = framesPerSecond;
+
 			// FIXME: Oh, hey! I wish we had this info in Theora!
 			Duration = TimeSpan.FromMilliseconds(durationMS);
 			needsDurationHack = false;
@@ -168,23 +167,18 @@ namespace Microsoft.Xna.Framework.Media
 			return new Video(path, graphicsDevice);
 		}
 
+		// FIXME: These should be in VideoPlayer instead!
+
+		internal int audioTrack = -1;
+		internal int videoTrack = -1;
+		internal VideoPlayer parent;
+
 		public void SetAudioTrackEXT(int track)
 		{
-			if (theora != IntPtr.Zero)
+			audioTrack = track;
+			if (parent != null)
 			{
-				Theorafile.tf_setaudiotrack(theora, track);
-			}
-		}
-
-		#endregion
-
-		#region Destructor
-
-		~Video()
-		{
-			if (theora != IntPtr.Zero)
-			{
-				Theorafile.tf_close(ref theora);
+				parent.SetAudioTrackEXT(track);
 			}
 		}
 
