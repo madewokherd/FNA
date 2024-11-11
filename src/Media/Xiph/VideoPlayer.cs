@@ -664,7 +664,7 @@ namespace Microsoft.Xna.Framework.Media
 			// Sanity checks for video metadata
 			if (Video.Width != yWidth || Video.Height != yHeight)
 			{
-				throw new InvalidOperationException(
+				FNALoggerEXT.LogWarn(
 					"XNB/OGV width/height mismatch!" +
 					" Width: " + Video.Width.ToString() +
 					" Height: " + Video.Height.ToString()
@@ -672,7 +672,7 @@ namespace Microsoft.Xna.Framework.Media
 			}
 			if (Math.Abs(Video.FramesPerSecond - fps) >= 1.0f)
 			{
-				throw new InvalidOperationException(
+				FNALoggerEXT.LogWarn(
 					"XNB/OGV framesPerSecond mismatch!" +
 					" FPS: " + Video.FramesPerSecond.ToString()
 				);
