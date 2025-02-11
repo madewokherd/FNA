@@ -820,12 +820,11 @@ namespace Microsoft.Xna.Framework.Media
 
 		#endregion
 
-		#region Internal Extensions
+		#region Public Extensions
 
-		// FIXME: These should replace the Video extensions!
 		// FIXME: Maybe store these to carry over to future videos?
 
-		internal void SetAudioTrackEXT(int track)
+		public void SetAudioTrackEXT(int track)
 		{
 			if (theora != IntPtr.Zero)
 			{

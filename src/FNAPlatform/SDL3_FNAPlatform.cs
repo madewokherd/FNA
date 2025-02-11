@@ -280,14 +280,6 @@ namespace Microsoft.Xna.Framework
 
 		public static void ProgramExit(object sender, EventArgs e)
 		{
-			AudioEngine.ProgramExiting = true;
-
-			if (SoundEffect.FAudioContext.Context != null)
-			{
-				SoundEffect.FAudioContext.Context.Dispose();
-			}
-			Media.MediaPlayer.DisposeIfNecessary();
-
 			// This _should_ be the last SDL call we make...
 			SDL.SDL_QuitSubSystem(
 				SDL.SDL_InitFlags.SDL_INIT_VIDEO |
@@ -829,12 +821,7 @@ namespace Microsoft.Xna.Framework
 			// Store this for internal event filter work
 			activeGames.Add(game);
 
-			// Which display did we end up on?
-			uint displayId = SDL.SDL_GetDisplayForWindow(
-				game.Window.Handle
-			);
-			int displayIndex = FetchDisplayIndex(displayId);
-			return GraphicsAdapter.Adapters[displayIndex];
+			return FetchDisplayAdapter(game.Window.Handle);
 		}
 
 		public static void UnregisterGame(Game game)
@@ -1023,19 +1010,11 @@ namespace Microsoft.Xna.Framework
 						 * display, a GraphicsDevice Reset occurs.
 						 * -flibit
 						 */
-						uint newId = SDL.SDL_GetDisplayForWindow(
-							game.Window.Handle
-						);
-						int newIndex = FetchDisplayIndex(newId);
+						GraphicsAdapter next = FetchDisplayAdapter(game.Window.Handle);
 
-						if (newIndex >= GraphicsAdapter.Adapters.Count)
+						if (next != currentAdapter)
 						{
-							GraphicsAdapter.AdaptersChanged(); // quickfix for this event coming in before the display reattach event. (must be fixed in sdl)
-						}
-
-						if (GraphicsAdapter.Adapters[newIndex] != currentAdapter)
-						{
-							currentAdapter = GraphicsAdapter.Adapters[newIndex];
+							currentAdapter = next;
 							game.GraphicsDevice.Reset(
 								game.GraphicsDevice.PresentationParameters,
 								currentAdapter
@@ -1059,11 +1038,7 @@ namespace Microsoft.Xna.Framework
 				{
 					GraphicsAdapter.AdaptersChanged();
 
-					uint displayId = SDL.SDL_GetDisplayForWindow(
-						game.Window.Handle
-					);
-					int displayIndex = FetchDisplayIndex(displayId);
-					currentAdapter = GraphicsAdapter.Adapters[displayIndex];
+					currentAdapter = FetchDisplayAdapter(game.Window.Handle);
 
 					// Orientation Change
 					if (evt.type == (uint) SDL.SDL_EventType.SDL_EVENT_DISPLAY_ORIENTATION)
@@ -1222,16 +1197,32 @@ namespace Microsoft.Xna.Framework
 
 		// FIXME SDL3: This is really sloppy -flibit
 		private static uint[] displayIds;
-		private static int FetchDisplayIndex(uint id)
+		private static GraphicsAdapter FetchDisplayAdapter(IntPtr window, bool retry = true)
 		{
+			uint displayId = SDL.SDL_GetDisplayForWindow(window);
+
+			int index = -1;
 			for (int i = 0; i < displayIds.Length; i += 1)
 			{
-				if (id == displayIds[i])
+				if (displayId == displayIds[i])
 				{
-					return i;
+					index = i;
+					break;
 				}
 			}
-			throw new InvalidOperationException();
+
+			if (index < 0 || index > GraphicsAdapter.Adapters.Count)
+			{
+				FNALoggerEXT.LogWarn("SDL3 Window ID and Display ID desync'd");
+				if (retry)
+				{
+					GraphicsAdapter.AdaptersChanged();
+					return FetchDisplayAdapter(window, false);
+				}
+				FNALoggerEXT.LogWarn("SDL3 Window ID and Display ID desync'd really badly");
+				return GraphicsAdapter.DefaultAdapter;
+			}
+			return GraphicsAdapter.Adapters[index];
 		}
 
 		public static GraphicsAdapter[] GetGraphicsAdapters()

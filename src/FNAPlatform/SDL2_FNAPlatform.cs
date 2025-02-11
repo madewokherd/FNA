@@ -440,14 +440,6 @@ namespace Microsoft.Xna.Framework
 
 		public static void ProgramExit(object sender, EventArgs e)
 		{
-			AudioEngine.ProgramExiting = true;
-
-			if (SoundEffect.FAudioContext.Context != null)
-			{
-				SoundEffect.FAudioContext.Context.Dispose();
-			}
-			Media.MediaPlayer.DisposeIfNecessary();
-
 			// This _should_ be the last SDL call we make...
 			SDL.SDL_QuitSubSystem(
 				SDL.SDL_INIT_VIDEO |
